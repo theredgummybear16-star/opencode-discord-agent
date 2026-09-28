@@ -391,7 +391,8 @@ class Controller:
     async def _typing(self, channel):
         try:
             if channel is not None:
-                await channel.typing()
+                async with channel.typing():
+                    await asyncio.sleep(0.5)
         except Exception:
             pass
 

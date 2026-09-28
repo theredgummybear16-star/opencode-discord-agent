@@ -65,23 +65,23 @@ class Supervisor:
             if now - last_save > 90:
                 last_save = now
                 await asyncio.get_event_loop().run_in_executor(None, self._save_state)
-            if now - last_save > 30:
-                pass
             try:
                 await self.controller.sweep_expired()
             except Exception as e:
                 brain.quiet_log("sweep err %s" % e)
-            if elapsed >= config.FORCE_S:
-                brain.quiet_log("force restart")
-                await self.controller.owner_notify("I've hit my 5h40 run limit and need to restart now. I'll be right back after a short gap.")
+            force = elapsed >= config.FORCE_S
+            idle_restart = elapsed >= config.MAX_CYCLE_S - 120 and idle >= config.IDLE_RESTART_S
+            if force or idle_restart:
+                brain.quiet_log("restarting (%s)" % ("force" if force else "idle"))
+                if force:
+                    await self.controller.owner_notify("I've hit my 5h40 run limit and need to restart now. I'll be right back after a short gap.")
                 self._finalize()
-                gitops.dispatch()
-                raise SystemExit(0)
-            if elapsed >= config.MAX_CYCLE_S - 120 and idle >= config.IDLE_RESTART_S:
-                brain.quiet_log("idle restart")
-                self._finalize()
-                gitops.dispatch()
-                raise SystemExit(0)
+                await asyncio.get_event_loop().run_in_executor(None, gitops.dispatch)
+                try:
+                    await self.client.close()
+                except Exception:
+                    pass
+                return
 
     def _save_state(self):
         try:

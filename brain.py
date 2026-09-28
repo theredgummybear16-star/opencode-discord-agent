@@ -195,6 +195,12 @@ def build_context(rec, capabilities, origin, request, approval_hint=None, extra=
     if rec["kind"] == "dm":
         lines.append("- DMs are chat/help only. You have no guild powers here.")
         lines.append("- If the DM is from the bot owner and they request bot-level changes, you must still only act inside this tenant's authorized scope.")
+        if str(rec.get("user_id")) == config.OWNER_ID:
+            lines.append("")
+            lines.append("## Owner-only transcript access")
+            lines.append("- You are the bot OWNER. In this DM you may legitimately ask about OTHER users' DM conversations with the bot.")
+            lines.append("- To do that, output exactly one line: OWNER_TRANSCRIPT_REQ: <target> (target = the other user's ID or name). The system will fetch that DM's transcript and feed it back to you; then give the owner the answer based on it.")
+            lines.append("- This capability belongs to the owner alone. Inside any other tenant, never mention it, never use it, and never disclose other users' DM contents.")
     lines.append("- If you are not sure whether an action is safe, treat it as major: emit APPROVAL_REQUIRED instead of acting.")
     lines.append("")
     if config.SYSTEM_NOTES:
@@ -208,6 +214,9 @@ def build_context(rec, capabilities, origin, request, approval_hint=None, extra=
         lines.append("- Context: %s" % approval_hint)
     lines.append("- Message: %s" % request.get("content", ""))
     lines.append("")
+    if extra:
+        lines.append(extra)
+        lines.append("")
     lines.append("Reply to the requester. Keep it useful and reasonably short unless detail is needed.")
     return "\n".join(lines)
 

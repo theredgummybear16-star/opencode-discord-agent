@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 import secrets
 import time
 
@@ -190,6 +191,23 @@ class Controller:
         except Exception:
             return None
 
+    def _owner_transcript(self, target):
+        target = (target or "").strip().strip("<>").lower()
+        if not target:
+            return None
+        for tid, rec in list(self.state.get("tenants", {}).items()):
+            if rec.get("kind") != "dm":
+                continue
+            uid = str(rec.get("user_id") or "")
+            name = str(rec.get("name") or "").lower()
+            if uid.lower() == target or name == target or (len(target) >= 3 and target in name):
+                try:
+                    sid = self.state.get("session_last", {}).get(tid)
+                    return self._runner(tid).transcript(sid=sid)
+                except Exception as e:
+                    return "(error reading that DM: %s)" % e
+        return None
+
     async def run_agent(self, tid, rec, caps, origin, req, requester_id, message=None, target=None, dm_message=None, approval_hint=None):
         capabilities = perms.describe(caps) if caps else None
         if caps and not caps.get("is_owner_of_bot") and not caps.get("is_guild_owner") and not caps.get("manage_guild"):
@@ -211,6 +229,20 @@ class Controller:
             brain.quiet_log("run err %s" % e)
             return await self._finish(False, "Something went wrong: %s" % e, tid, message, requester_id, rec)
         self.touch()
+        is_owner_dm = rec.get("kind") == "dm" and str(rec.get("user_id")) == str(config.OWNER_ID)
+        if is_owner_dm and result.get("ok"):
+            m = re.search(r"^\s*OWNER_TRANSCRIPT_REQ:\s*(.+?)\s*$", result.get("text") or "", re.M)
+            if m:
+                target = m.group(1)
+                extra = await asyncio.get_event_loop().run_in_executor(None, self._owner_transcript, target)
+                prompt2 = brain.build_context(
+                    rec, capabilities, origin, req, approval_hint=None,
+                    extra="## Owner-requested transcript\nOwner asked about '%s'. Transcript below lets you answer accurately; do not re-emit OWNER_TRANSCRIPT_REQ.\n%s" % (target, extra or "(no matching DM history found).")
+                )
+                try:
+                    result = await asyncio.get_event_loop().run_in_executor(None, lambda: runner.run(prompt2, session_id=result.get("sid")))
+                except Exception as e:
+                    brain.quiet_log("transcript rerun err %s" % e)
         if result.get("ok"):
             if result.get("sid"):
                 self.state["session_last"][tid] = result["sid"]

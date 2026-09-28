@@ -66,6 +66,39 @@ class Runner:
                 ids.add(line.split()[0])
         return ids
 
+    def transcript(self, sid=None, limit=40, max_chars=9000):
+        if sid is None:
+            ids = self._snapshot_sessions()
+            if not ids:
+                return None
+            sid = max(ids, key=lambda i: _updated_for(self.env(), i) or 0)
+        code, out, _ = _run_quiet(["opencode", "export", sid], env=self.env(), timeout=60)
+        if code != 0:
+            return None
+        try:
+            data = json.loads(out.decode("utf-8", "replace"))
+        except Exception:
+            return None
+        lines = []
+        for msg in data.get("messages", []):
+            role = (msg.get("info") or {}).get("role")
+            if role not in ("user", "assistant"):
+                continue
+            text = " ".join(
+                str(part.get("text", "")).strip()
+                for part in msg.get("parts", [])
+                if part.get("type") == "text" and str(part.get("text", "")).strip()
+            ).strip()
+            if not text:
+                continue
+            lines.append("%s: %s" % ("user" if role == "user" else "assistant", text))
+        if not lines:
+            return None
+        out_txt = "\n".join(lines[-limit:])
+        if len(out_txt) > max_chars:
+            out_txt = "...[truncated beginning]...\n" + out_txt[-max_chars:]
+        return out_txt
+
     def _export_text(self, sid):
         code, out, _ = _run_quiet(["opencode", "export", sid], env=self.env(), timeout=60)
         if code != 0:

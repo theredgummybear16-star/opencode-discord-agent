@@ -56,9 +56,10 @@ class Controller:
                 self._runner(tid).secret = secret
             except Exception as e:
                 brain.quiet_log("tenant init fail %s %s" % (tid, e))
+        guilds = ", ".join("%s [%s]" % (g.name, g.id) for g in self.client.guilds) or "none"
         await self.owner_notify(
-            "opencode-ai is online. Cycle runs up to 5h then self-restarts. "
-            "Major actions wait for your approval in DMs. React \uD83D\uDC4D/\uD83D\uDC4E or reply to decide."
+            "opencode-ai is online. I'm currently in guilds: %s | Cycle runs up to 5h then self-restarts. "
+            "Major actions wait for your approval in DMs. React \uD83D\uDC4D/\uD83D\uDC4E or reply to decide." % guilds
         )
 
     async def owner_notify(self, text):
@@ -88,21 +89,33 @@ class Controller:
                 await self._handle_dm(message)
                 return
             if isinstance(message.channel, discord.Thread) and message.channel.parent_id in self.created_threads:
-                await self._handle_guild(message)
+                await self._safe_guild(message)
                 return
             if self.client.user in message.mentions:
-                await self._handle_guild(message)
+                await self._safe_guild(message)
                 return
             if message.reference and getattr(message.reference, "message_id", None):
                 try:
                     ref = await message.channel.fetch_message(message.reference.message_id)
                     if ref.author.id == self.client.user.id:
-                        await self._handle_guild(message)
+                        await self._safe_guild(message)
                         return
                 except Exception:
                     pass
         except Exception as e:
             brain.quiet_log("handle_message err %s" % e)
+
+    async def _safe_guild(self, message):
+        try:
+            await self._handle_guild(message)
+        except Exception as e:
+            brain.quiet_log("guild err %s" % e)
+            try:
+                await message.channel.send(
+                    "⚠️ I hit an error handling that in %s: **%s** — this is visible now so I can fix it." % (message.guild, str(e)[:160])
+                )
+            except Exception:
+                pass
 
     async def _handle_dm(self, message):
         author_id = str(message.author.id)
@@ -136,6 +149,10 @@ class Controller:
                 break
 
     async def _handle_guild(self, message):
+        try:
+            await message.add_reaction(config.EYES)
+        except Exception:
+            pass
         guild = message.guild
         gid = str(guild.id)
         tid = "guild_%s" % gid
@@ -154,10 +171,6 @@ class Controller:
             self._runner(tid).secret = secret
         caps = perms.member_capabilities(member)
         caps["is_owner_of_bot"] = str(member.id) == config.OWNER_ID
-        try:
-            await message.add_reaction(config.EYES)
-        except Exception:
-            pass
         content = message.content or ""
         target = message.channel
         if rec.get("config", {}).get("long_threads", True):

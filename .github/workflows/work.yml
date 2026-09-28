@@ -1,0 +1,47 @@
+name: opencode-agent
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "13 */5 * * *"
+
+concurrency:
+  group: opencode-agent
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  agent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: deps
+        run: python -m pip install -q --disable-pip-version-check -r requirements.txt >/dev/null 2>&1
+
+      - name: opencode
+        run: |
+          curl -fsSL https://opencode.ai/install | bash >/dev/null 2>&1
+          echo "$HOME/.opencode/bin" >> "$GITHUB_PATH"
+
+      - name: agent
+        timeout-minutes: 320
+        env:
+          DS_TOKEN: ${{ secrets.DS_TOKEN }}
+          GH_ADMIN_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
+          BRAIN_PASSPHRASE: ${{ secrets.BRAIN_PASSPHRASE }}
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          AUTH_JSON: ${{ secrets.AUTH_JSON }}
+          OPENCODE_MODEL: ${{ secrets.OPENCODE_MODEL }}
+          OWNER_ID: ${{ secrets.OWNER_ID }}
+          SYSTEM_NOTES: ${{ secrets.SYSTEM_NOTES }}
+          GH_REPO: ${{ github.repository }}
+        run: python supervisor.py >/dev/null 2>&1

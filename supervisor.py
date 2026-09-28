@@ -31,7 +31,7 @@ class Supervisor:
         intents.dm_messages = True
         intents.guild_reactions = True
         intents.dm_reactions = True
-        intents.guild_members = True
+        intents.members = True
         client = discord.Client(intents=intents)
         controller = Controller(client, self.state, self.proxy)
         self.client = client
@@ -43,6 +43,7 @@ class Supervisor:
             acts = discord.Activity(type=discord.ActivityType.watching, name="the ai kitchen")
             await client.change_presence(activity=acts)
             await controller.on_online()
+            asyncio.get_event_loop().run_in_executor(None, gitops.commit_and_push, config.REPO, "online %d" % int(time.time()))
             client.loop.create_task(self._lifecycle())
 
         @client.event

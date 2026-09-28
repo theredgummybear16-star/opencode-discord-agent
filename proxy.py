@@ -87,6 +87,13 @@ class Handler(BaseHTTPRequestHandler):
                 url = DISCORD_API + parsed.path + ("?" + qs if qs else "")
                 status, raw, err = _request(method, url, body=body, token=config.DS_TOKEN)
                 self.server.owner.audit(tid, method, parsed.path, status)
+                if method == "POST" and parsed.path == "/users/@me/channels" and status == 200:
+                    try:
+                        cid = json.loads(raw).get("id")
+                        if cid:
+                            self.server.owner.note_dm_channel(tid, str(cid))
+                    except Exception:
+                        pass
                 self._respond(status, raw, is_bytes=True)
             else:
                 self._respond(403, {"error": "out of tenant scope"})
@@ -175,8 +182,16 @@ class Proxy:
             guild_id = self.cache.resolve(cid)
             if scope.get("kind") == "dm":
                 return str(cid) in (scope.get("channels") or [])
+            if str(cid) in (scope.get("dm_created") or []):
+                return True
             return bool(guild_id) and guild_id == scope.get("guild_id")
         return False
+
+    def note_dm_channel(self, tid, cid):
+        for info in self.owner_scopes.values():
+            if info["tid"] == tid:
+                info["scope"].setdefault("dm_created", []).append(cid)
+                break
 
     def audit(self, tid, method, path, status):
         try:

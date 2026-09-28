@@ -74,8 +74,6 @@ class Supervisor:
             idle_restart = elapsed >= config.MAX_CYCLE_S - 120 and idle >= config.IDLE_RESTART_S
             if force or idle_restart:
                 brain.quiet_log("restarting (%s)" % ("force" if force else "idle"))
-                if force:
-                    await self.controller.owner_notify("I've hit my 5h40 run limit and need to restart now. I'll be right back after a short gap.")
                 self._finalize()
                 await asyncio.get_event_loop().run_in_executor(None, gitops.dispatch)
                 try:

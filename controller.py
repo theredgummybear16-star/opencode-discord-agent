@@ -56,11 +56,6 @@ class Controller:
                 self._runner(tid).secret = secret
             except Exception as e:
                 brain.quiet_log("tenant init fail %s %s" % (tid, e))
-        guilds = ", ".join("%s [%s]" % (g.name, g.id) for g in self.client.guilds) or "none"
-        await self.owner_notify(
-            "opencode-ai is online. I'm currently in guilds: %s | Cycle runs up to 5h then self-restarts. "
-            "Major actions wait for your approval in DMs. React \uD83D\uDC4D/\uD83D\uDC4E or reply to decide." % guilds
-        )
 
     async def owner_notify(self, text):
         await self._send_to_owner(text)
@@ -158,12 +153,6 @@ class Controller:
         tid = "guild_%s" % gid
         member = message.author
         rec = brain.ensure_tenant(self.state, tid, "guild", str(guild), guild_id=gid)
-        if gid == "1526896407078895737":
-            extras = rec.get("config", {}).get("ping_extra", [])
-            for who in ("1348335067562377236", "1305964364595073048"):
-                if who not in extras:
-                    extras.append(who)
-            rec["config"]["ping_extra"] = extras
         if tid not in self.runners or tid not in self.secrets:
             brain.unpack_tenant(tid)
             brain.write_auth(tid)
@@ -234,9 +223,6 @@ class Controller:
         mention_ids = None
         if message is not None and getattr(message, "guild", None):
             mention_ids = [str(requester_id)]
-            for extra in (rec.get("config", {}) or {}).get("ping_extra", []):
-                if extra not in mention_ids:
-                    mention_ids.append(str(extra))
             try:
                 await message.add_reaction(config.OK if ok else config.BAD)
             except Exception:

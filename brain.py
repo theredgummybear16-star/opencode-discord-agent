@@ -184,6 +184,7 @@ def build_context(rec, capabilities, origin, request, approval_hint=None, extra=
     lines.append("- Send HTTP requests with headers: Authorization: Bearer <per-tenant secret from env DISCORD_AUTH>, Content-Type: application/json.")
     lines.append("- The proxy only permits operations within this tenant's authorized scope (%s). If the proxy returns 403/Forbidden, the operation is out of scope: do NOT try to bypass; explain that you cannot do that here." % origin)
     lines.append("- You can read the Discord API documents endpoints by their usual /channels, /guilds, /roles, /members, /messages shapes. Use the token via the proxy only.")
+    lines.append("- To DM a user: first POST /users/@me/channels with {\"recipient_id\": <id>} (the proxy remembers this DM channel for you), then POST /channels/<dm_id>/messages to send. You may only message DMs you created yourself.")
     lines.append("")
     lines.append("## Authority model (never exceed the requester's own power)")
     lines.append("- The requester can only do themselves what you do for them.")

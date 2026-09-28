@@ -35,7 +35,7 @@ def member_capabilities(member):
                 perm = member.top_role.permissions
             except Exception:
                 perm = None
-if perm is not None:
+        if perm is not None:
             try:
                 caps["ban_members"] = bool(perm.ban_members)
                 caps["kick_members"] = bool(perm.kick_members)

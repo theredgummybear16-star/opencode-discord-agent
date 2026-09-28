@@ -35,16 +35,19 @@ def member_capabilities(member):
                 perm = member.top_role.permissions
             except Exception:
                 perm = None
-        if perm is not None:
-            caps["ban_members"] = bool(perm.ban_members)
-            caps["kick_members"] = bool(perm.kick_members)
-            caps["manage_roles"] = bool(perm.manage_roles)
-            caps["manage_channels"] = bool(perm.manage_channels)
-            caps["manage_guild"] = bool(perm.manage_guild)
-            caps["manage_messages"] = bool(perm.manage_messages)
-            caps["administrator"] = bool(perm.administrator)
-            caps["view_channels"] = bool(perm.view_channels)
-            caps["mention_everyone"] = bool(perm.mention_everyone)
+if perm is not None:
+            try:
+                caps["ban_members"] = bool(perm.ban_members)
+                caps["kick_members"] = bool(perm.kick_members)
+                caps["manage_roles"] = bool(perm.manage_roles)
+                caps["manage_channels"] = bool(perm.manage_channels)
+                caps["manage_guild"] = bool(perm.manage_guild)
+                caps["manage_messages"] = bool(perm.manage_messages)
+                caps["administrator"] = bool(perm.administrator)
+                caps["view_channels"] = bool(perm.view_channel)
+                caps["mention_everyone"] = bool(perm.mention_everyone)
+            except Exception:
+                pass
         try:
             caps["roles"] = [str(r.id) for r in member.roles]
             caps["highest_role_position"] = member.top_role.position if member.roles else -1

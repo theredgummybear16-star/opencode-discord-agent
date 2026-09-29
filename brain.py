@@ -67,6 +67,15 @@ def tenant_data(tid):
     return path
 
 
+def load_memory(tid):
+    try:
+        with open(os.path.join(tenant_workspace(tid), config.MEMORY_FILE), "r", encoding="utf-8", errors="replace") as fh:
+            txt = fh.read().strip()
+        return txt[:12000] or None
+    except Exception:
+        return None
+
+
 def brain_path(tid):
     return os.path.join(config.BRAINS_DIR, "t_%s.gpg" % tid)
 
@@ -186,22 +195,46 @@ def build_context(rec, capabilities, origin, request, approval_hint=None, extra=
     lines.append("- You can read the Discord API documents endpoints by their usual /channels, /guilds, /roles, /members, /messages shapes. Use the token via the proxy only.")
     lines.append("- To DM a user: first POST /users/@me/channels with {\"recipient_id\": <id>} (the proxy remembers this DM channel for you), then POST /channels/<dm_id>/messages to send. You may only message DMs you created yourself.")
     lines.append("")
-    lines.append("## Authority model (never exceed the requester's own power)")
-    lines.append("- The requester can only do themselves what you do for them.")
-    lines.append("- Capabilities of the requester in this context: %s" % (capabilities or "none (DM chat)"))
-    if rec["kind"] == "guild":
-        lines.append("- If the requester is not the guild owner and the action would require manage_guild (server settings, name, icon, deleting channels/roles, bans, permission rework, creating bots), or is otherwise irreversible/major, you MUST NOT perform it. Instead output exactly: APPROVAL_REQUIRED: <short json {'action':..., 'target':..., 'reason':...}>")
-        lines.append("- If the requester is the guild owner or is the bot owner, you may act directly.")
-    if rec["kind"] == "dm":
-        lines.append("- DMs are chat/help only. You have no guild powers here.")
-        lines.append("- If the DM is from the bot owner and they request bot-level changes, you must still only act inside this tenant's authorized scope.")
-        if str(rec.get("user_id")) == config.OWNER_ID:
-            lines.append("")
-            lines.append("## Owner-only transcript access")
-            lines.append("- You are the bot OWNER. In this DM you may legitimately ask about OTHER users' DM conversations with the bot.")
-            lines.append("- To do that, output exactly one line: OWNER_TRANSCRIPT_REQ: <target> (target = the other user's ID or name). The system will fetch that DM's transcript and feed it back to you; then give the owner the answer based on it.")
-            lines.append("- This capability belongs to the owner alone. Inside any other tenant, never mention it, never use it, and never disclose other users' DM contents.")
-    lines.append("- If you are not sure whether an action is safe, treat it as major: emit APPROVAL_REQUIRED instead of acting.")
+    if config.APPROVAL_GATE:
+        lines.append("## Authority model (never exceed the requester's own power)")
+        lines.append("- The requester can only do themselves what you do for them.")
+        lines.append("- Capabilities of the requester in this context: %s" % (capabilities or "none (DM chat)"))
+        if rec["kind"] == "guild":
+            lines.append("- If the requester is not the guild owner and the action would require manage_guild (server settings, name, icon, deleting channels/roles, bans, permission rework, creating bots), or is otherwise irreversible/major, you MUST NOT perform it. Instead output exactly: APPROVAL_REQUIRED: <short json {'action':..., 'target':..., 'reason':...}>")
+            lines.append("- If the requester is the guild owner or is the bot owner, you may act directly.")
+        if rec["kind"] == "dm":
+            lines.append("- This is a DM. Act within your DM scope.")
+            lines.append("- If the DM comes from the bot owner and they request bot-level changes, you must still only act inside this tenant's authorized scope.")
+            if str(rec.get("user_id")) == config.OWNER_ID:
+                lines.append("")
+                lines.append("## Owner-only transcript access")
+                lines.append("- You are the bot OWNER. In this DM you may legitimately ask about OTHER users' DM conversations with the bot.")
+                lines.append("- To do that, output exactly one line: OWNER_TRANSCRIPT_REQ: <target> (target = the other user's ID or name). The system will fetch that DM's transcript and feed it back to you; then give the owner the answer based on it.")
+                lines.append("- This capability belongs to the owner alone. Inside any other tenant, never mention it, never use it, and never disclose other users' DM contents.")
+        lines.append("- If you are not sure whether an action is safe, treat it as major: emit APPROVAL_REQUIRED instead of acting.")
+    else:
+        lines.append("## Authority model (trusted, no approval gate)")
+        lines.append("- You may act directly on requests inside this tenant's authorized scope. No approval step is needed.")
+        lines.append("- In a server you have the bot's own powers: use the proxy to manage channels, roles, messages, permissions, emojis, moderation, server settings, create things, edit things, DM members, help run the server. Use your judgment and do what the requester needs.")
+        lines.append("- Stay inside your tenant scope: the proxy only routes this tenant's own server/DM operations. If the proxy returns 403/Forbidden, the operation is out of scope: do NOT try to bypass; explain you can't do that here.")
+        lines.append("- Capabilities of the requester in this context: %s" % (capabilities or "none (DM chat)"))
+        if rec["kind"] == "dm":
+            lines.append("- This is a DM. You can chat, help, and use tools inside your DM scope.")
+            if str(rec.get("user_id")) == config.OWNER_ID:
+                lines.append("")
+                lines.append("## Owner-only transcript access")
+                lines.append("- You are the bot OWNER. In this DM you may legitimately ask about OTHER users' DM conversations with the bot.")
+                lines.append("- To do that, output exactly one line: OWNER_TRANSCRIPT_REQ: <target> (target = the other user's ID or name). The system will fetch that DM's transcript and feed it back to you; then give the owner the answer based on it.")
+                lines.append("- This capability belongs to the owner alone. Inside any other tenant, never mention it, never use it, and never disclose other users' DM contents.")
+        lines.append("- If an action is genuinely reckless or irreversible without good reason, reply to ask the requester first instead of acting.")
+    lines.append("")
+    mem = load_memory(rec["id"])
+    if mem:
+        lines.append("## Persistent memory (your notes from earlier) — the most recent record of past work")
+        lines.append(mem)
+        lines.append("")
+    lines.append("## Memory upkeep")
+    lines.append("- If anything new and worth remembering happened this turn (facts, decisions, in-progress work, preferences, people, states), update the file %s in your workspace root with the write tool: append one short bullet. Keep it under ~300 lines total; remove the oldest lines if it grows. Do NOT store secrets, tokens, or the proxy auth." % config.MEMORY_FILE)
     lines.append("")
     if config.SYSTEM_NOTES:
         lines.append("## Operator notes")

@@ -210,7 +210,7 @@ class Controller:
 
     async def run_agent(self, tid, rec, caps, origin, req, requester_id, message=None, target=None, dm_message=None, approval_hint=None):
         capabilities = perms.describe(caps) if caps else None
-        if caps and not caps.get("is_owner_of_bot") and not caps.get("is_guild_owner") and not caps.get("manage_guild"):
+        if config.APPROVAL_GATE and caps and not caps.get("is_owner_of_bot") and not caps.get("is_guild_owner") and not caps.get("manage_guild"):
             content = (req.get("content") or "").lower()
             hits = [k for k in EXTRA_MAJOR if k in content]
             if hits:
@@ -247,7 +247,9 @@ class Controller:
             if result.get("sid"):
                 self.state["session_last"][tid] = result["sid"]
             if result.get("approval"):
-                return await self._queue_approval(tid, rec, caps, origin, req, requester_id, message, target, result["approval"].strip())
+                if config.APPROVAL_GATE:
+                    return await self._queue_approval(tid, rec, caps, origin, req, requester_id, message, target, result["approval"].strip())
+                return await self._finish(True, result["text"] or "Done.", tid, message, requester_id, rec)
             return await self._finish(True, result["text"] or "Done.", tid, message, requester_id, rec)
         return await self._finish(False, "I failed to process that (model error or timeout). Try again.", tid, message, requester_id, rec)
 

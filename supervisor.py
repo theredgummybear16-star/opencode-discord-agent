@@ -84,9 +84,22 @@ class Supervisor:
 
     def _save_state(self):
         try:
+            for tid in list(self.state.get("tenants", {})):
+                try:
+                    brain.pack_tenant(tid)
+                except Exception as e:
+                    brain.quiet_log("pack fail %s %s" % (tid, e))
             brain.save_state(self.state)
         except Exception as e:
             brain.quiet_log("save err %s" % e)
+        now = time.time()
+        if now - getattr(self, "_last_checkpoint", now) >= 600:
+            self._last_checkpoint = now
+            try:
+                ok = gitops.commit_and_push(config.REPO, "checkpoint %d" % int(now))
+                brain.quiet_log("checkpoint commit=%s" % ok)
+            except Exception as e:
+                brain.quiet_log("checkpoint err %s" % e)
 
     def _finalize(self):
         try:
@@ -102,6 +115,7 @@ class Supervisor:
             brain.quiet_log("finalize err %s" % e)
 
     def run(self):
+        self._last_checkpoint = time.time()
         self._save_state()
         self.proxy.start()
         brain.quiet_log("proxy on %s" % self.proxy.port)

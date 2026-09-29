@@ -31,6 +31,8 @@ MAX_CYCLE_S = int(os.environ.get("MAX_CYCLE_S", str(5 * 3600)))
 REQUEST_TIMEOUT_S = int(os.environ.get("REQUEST_TIMEOUT_S", "1500"))
 APPROVAL_TTL_S = 24 * 3600
 SWEEP_S = 60
+APPROVAL_GATE = os.environ.get("APPROVAL_GATE", "").lower() == "on"
+MEMORY_FILE = "MEMORY.md"
 LONG_CHARS = int(os.environ.get("LONG_CHARS", "700"))
 LONG_WORDS = ("long", "big", "huge", "major", "revamp", "overhaul", "setup", "restructure", "reconfigure", "rebuild", "migrate", "complete")
 

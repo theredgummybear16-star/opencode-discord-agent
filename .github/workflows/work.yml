@@ -29,8 +29,19 @@ jobs:
 
       - name: opencode
         run: |
-          curl -fsSL https://opencode.ai/install | bash >/dev/null 2>&1
-          echo "$HOME/.opencode/bin" >> "$GITHUB_PATH"
+          set +e
+          for i in 1 2 3; do
+            curl -fsSL https://opencode.ai/install | bash >/dev/null 2>&1
+            if command -v opencode >/dev/null 2>&1 || [ -x "$HOME/.opencode/bin/opencode" ]; then FOUND=1; break; fi
+            sleep $((i*8))
+          done
+          if [ -z "$FOUND" ]; then
+            (npm install -g opencode-ai >/dev/null 2>&1) || true
+            command -v opencode >/dev/null 2>&1 && FOUND=1
+          fi
+          if [ -z "$FOUND" ]; then exit 1; fi
+          [ -d "$HOME/.opencode/bin" ] && echo "$HOME/.opencode/bin" >> "$GITHUB_PATH"
+          set -e
 
       - name: agent
         timeout-minutes: 320

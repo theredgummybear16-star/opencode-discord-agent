@@ -36,6 +36,7 @@ def empty_state():
         "approvals": {},
         "audit": [],
         "session_last": {},
+        "known_users": {},
         "started": None,
     }
 
@@ -172,7 +173,7 @@ def write_auth(tid):
     os.chmod(os.path.join(auth_dir, "auth.json"), 0o600)
 
 
-def build_context(rec, capabilities, origin, request, approval_hint=None, extra=""):
+def build_context(rec, capabilities, origin, request, approval_hint=None, extra="", known_users=None):
     lines = []
     lines.append("You are the agent powering the Discord bot '%s'." % config.BOT_APPLICATION)
     lines.append("")
@@ -240,6 +241,8 @@ def build_context(rec, capabilities, origin, request, approval_hint=None, extra=
         lines.append("## Operator notes")
         lines.append(config.SYSTEM_NOTES)
     lines.append("")
+    lines.append(known_users_section(known_users))
+    lines.append("")
     lines.append("## Current request")
     lines.append("- Requester: %s" % request.get("author_display", "unknown"))
     lines.append("- Channel: %s" % request.get("channel_display", "unknown"))
@@ -254,7 +257,28 @@ def build_context(rec, capabilities, origin, request, approval_hint=None, extra=
     return "\n".join(lines)
 
 
-def audit(state, entry):
+def record_user(state, user_id, name):
+    uid = str(user_id or "")
+    if uid and name:
+        state.setdefault("known_users", {})[uid] = {"name": str(name)[:80]}
+        if len(state["known_users"]) > 200:
+            for k in list(state["known_users"])[:len(state["known_users"]) - 200]:
+                state["known_users"].pop(k, None)
+
+
+def known_users_section(known_users=None):
+    known = dict(known_users or {})
+    owner_name = ""
+    if config.OWNER_ID:
+        owner_name = (known.pop(config.OWNER_ID, None) or {}).get("name") or "juro50000"
+    lines = ["## Discord users",
+             "- You know these Discord users (name -> id). When asked to DM, mention, or relay a message to someone by one of these names, use their id DIRECTLY. NEVER ask for a numeric user id for someone on this list."]
+    if config.OWNER_ID:
+        lines.append("- %s = %s  (this is the bot OWNER, Juro)" % (owner_name, config.OWNER_ID))
+    for uid, info in list(known.items())[:50]:
+        lines.append("- %s = %s" % (info.get("name") or uid, uid))
+    lines.append("- If someone mentions a name NOT on this list, you do not have their id: tell them to DM the bot once so you learn it, instead of asking for numbers.")
+    return "\n".join(lines)
     state["audit"].append({"ts": int(time.time()), **entry})
     if len(state["audit"]) > 2000:
         state["audit"] = state["audit"][-2000:]

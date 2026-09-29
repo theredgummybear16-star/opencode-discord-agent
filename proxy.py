@@ -75,7 +75,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._respond(403, {"error": "forbidden"})
                 return
             parsed = urllib.parse.urlparse(self.path)
-            if self.server.owner.check_scope(tid, parsed.path):
+            if self.server.owner.check_scope(tid, method, parsed.path):
                 body = None
                 if "Content-Length" in self.headers:
                     try:
@@ -155,7 +155,7 @@ class Proxy:
         info = self.owner_scopes.get(token)
         return info["tid"] if info else None
 
-    def check_scope(self, tid, path):
+    def check_scope(self, tid, method, path):
         scope = None
         for info in self.owner_scopes.values():
             if info["tid"] == tid:
@@ -181,10 +181,24 @@ class Proxy:
             cid = segs[1]
             guild_id = self.cache.resolve(cid)
             if scope.get("kind") == "dm":
-                return str(cid) in (scope.get("channels") or [])
+                if str(cid) in (scope.get("channels") or []) or str(cid) in (scope.get("dm_created") or []):
+                    return True
+                return (not guild_id) and self._dm_write_allowed(method, segs, cid)
             if str(cid) in (scope.get("dm_created") or []):
                 return True
             return bool(guild_id) and guild_id == scope.get("guild_id")
+        return False
+
+    def _dm_write_allowed(self, method, segs, cid):
+        if len(segs) < 3:
+            return False
+        if segs[2] == "typing" and method == "POST":
+            return True
+        if segs[2] == "messages":
+            if method == "POST":
+                return True
+            if len(segs) >= 5 and segs[4] == "reactions" and method in ("PUT", "DELETE"):
+                return True
         return False
 
     def note_dm_channel(self, tid, cid):

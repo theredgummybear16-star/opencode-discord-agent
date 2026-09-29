@@ -115,6 +115,7 @@ class Controller:
 
     async def _handle_dm(self, message):
         author_id = str(message.author.id)
+        brain.record_user(self.state, message.author.id, str(message.author))
         tid = "dm_%s" % author_id
         is_owner = author_id == config.OWNER_ID
         if is_owner:
@@ -151,6 +152,7 @@ class Controller:
             pass
         guild = message.guild
         gid = str(guild.id)
+        brain.record_user(self.state, message.author.id, str(message.author))
         tid = "guild_%s" % gid
         member = message.author
         rec = brain.ensure_tenant(self.state, tid, "guild", str(guild), guild_id=gid)
@@ -216,7 +218,7 @@ class Controller:
             if hits:
                 return await self._queue_approval(tid, rec, caps, origin, req, requester_id, message, target,
                                                   "requires approval (requested %s)" % ", ".join(h.strip() for h in hits))
-        prompt = brain.build_context(rec, capabilities, origin, req, approval_hint=approval_hint)
+        prompt = brain.build_context(rec, capabilities, origin, req, approval_hint=approval_hint, known_users=self.state.get("known_users"))
         runner = self._runner(tid)
         os.environ["DISCORD_AUTH"] = self.secrets.get(tid, "")
         os.environ["PROXY_PORT"] = str(self.proxy.port)

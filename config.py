@@ -7,7 +7,7 @@ DATA_DIR = os.path.join(ROOT, "data")
 STATE_GPG = os.path.join(BRAINS_DIR, "_state.gpg")
 LOGS_DIR = os.path.join(ROOT, "state")
 
-OWNER_ID = os.environ.get("OWNER_ID", "1348335067562377236")
+OWNER_ID = os.environ.get("OWNER_ID", "1305964364595073048")
 BOT_APPLICATION = os.environ.get("BOT_APPLICATION", "opencode-ai")
 REPO = os.environ.get("GH_REPO", "")
 MODEL = os.environ.get("OPENCODE_MODEL", "opencode/big-pickle")

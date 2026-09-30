@@ -51,6 +51,10 @@ class Supervisor:
             await controller.handle_message(message)
 
         @client.event
+        async def on_guild_join(guild):
+            await controller.on_guild_join(guild)
+
+        @client.event
         async def on_raw_reaction_add(payload):
             await controller.on_reaction(payload)
 

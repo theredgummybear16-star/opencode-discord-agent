@@ -50,6 +50,10 @@ class Controller:
         if self.tenants_ready:
             return
         self.tenants_ready = True
+        try:
+            self.proxy.set_owner_guilds([g.id for g in self.client.guilds])
+        except Exception as e:
+            brain.quiet_log("owner guilds err %s" % e)
         for tid, rec in list(self.state["tenants"].items()):
             try:
                 brain.unpack_tenant(tid)
@@ -57,6 +61,12 @@ class Controller:
                 self._runner(tid).secret = secret
             except Exception as e:
                 brain.quiet_log("tenant init fail %s %s" % (tid, e))
+
+    async def on_guild_join(self, guild):
+        try:
+            self.proxy.set_owner_guilds([g.id for g in self.client.guilds])
+        except Exception as e:
+            brain.quiet_log("guild join err %s" % e)
 
     async def owner_notify(self, text):
         await self._send_to_owner(text)

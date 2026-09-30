@@ -209,6 +209,9 @@ def build_context(rec, capabilities, origin, request, approval_hint=None, extra=
             lines.append("- If the DM comes from the bot owner and they request bot-level changes, you must still only act inside this tenant's authorized scope.")
             if str(rec.get("user_id")) == config.OWNER_ID:
                 lines.append("")
+                lines.append("## Owner-only: you control the bot from here")
+                lines.append("- Because you are the OWNER, your proxy scope also includes every server the bot is in: you may read and write channels, threads, roles, members and messages across ALL of them from this DM, exactly as the bot itself would. When the owner asks to post/act somewhere, do it via the proxy; do not claim it's forbidden.")
+                lines.append("")
                 lines.append("## Owner-only transcript access")
                 lines.append("- You are the bot OWNER. In this DM you may legitimately ask about OTHER users' DM conversations with the bot.")
                 lines.append("- To do that, output exactly one line: OWNER_TRANSCRIPT_REQ: <target> (target = the other user's ID or name). The system will fetch that DM's transcript and feed it back to you; then give the owner the answer based on it.")
@@ -223,6 +226,9 @@ def build_context(rec, capabilities, origin, request, approval_hint=None, extra=
         if rec["kind"] == "dm":
             lines.append("- This is a DM. You can chat, help, and use tools inside your DM scope.")
             if str(rec.get("user_id")) == config.OWNER_ID:
+                lines.append("")
+                lines.append("## Owner-only: you control the bot from here")
+                lines.append("- Because you are the OWNER, your proxy scope also includes every server the bot is in: you may read and write channels, threads, roles, members and messages across ALL of them from this DM, exactly as the bot itself would. When the owner asks to post/act somewhere, do it via the proxy; do not claim it's forbidden.")
                 lines.append("")
                 lines.append("## Owner-only transcript access")
                 lines.append("- You are the bot OWNER. In this DM you may legitimately ask about OTHER users' DM conversations with the bot.")

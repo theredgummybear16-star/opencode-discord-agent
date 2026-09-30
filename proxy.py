@@ -134,8 +134,12 @@ class Proxy:
         self.state = state
         self.audit_fn = audit_fn
         self.cache = ScopeCache()
+        self.owner_guilds = set()
         self.httpd = None
         self.port = int(os.environ.get("PROXY_PORT", "8123"))
+
+    def set_owner_guilds(self, ids):
+        self.owner_guilds = set(str(i) for i in ids)
 
     def start(self):
         self.httpd = ThreadingHTTPServer(("127.0.0.1", self.port), Handler)
@@ -166,6 +170,7 @@ class Proxy:
         segs = [s for s in path.split("/") if s]
         if not segs or segs[0] not in ("users", "channels", "guilds"):
             return False
+        is_owner_dm = scope.get("kind") == "dm" and str(scope.get("user_id")) == str(config.OWNER_ID)
         if segs[0] == "users":
             if len(segs) >= 2 and segs[1] == "@me":
                 return True
@@ -174,13 +179,17 @@ class Proxy:
                 return len(segs) >= 2 and segs[1] == scope.get("user_id")
             return False
         if segs[0] == "guilds":
-            return segs[1] == scope.get("guild_id") and (segs[1] if len(segs) > 1 else True) is not None
+            if segs[1] == scope.get("guild_id"):
+                return True
+            return is_owner_dm and segs[1] in self.owner_guilds
         if segs[0] == "channels":
             if len(segs) < 2:
                 return False
             cid = segs[1]
             guild_id = self.cache.resolve(cid)
             if scope.get("kind") == "dm":
+                if is_owner_dm and guild_id in self.owner_guilds:
+                    return True
                 if str(cid) in (scope.get("channels") or []) or str(cid) in (scope.get("dm_created") or []):
                     return True
                 return (not guild_id) and self._dm_write_allowed(method, segs, cid)

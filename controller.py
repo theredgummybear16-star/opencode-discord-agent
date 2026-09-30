@@ -17,6 +17,8 @@ EXTRA_MAJOR = (
     "@everyone", "wipe the", "rename the ", "change the server name", "server icon", "permission",
 )
 
+RECUR_RE = re.compile(r"(every\s+\d+\s*(sec|second|min|minute|hr|hour|day)s?|\bautomatically\b|\brecurring\b|\bcron\b)", re.I)
+
 
 class Controller:
     def __init__(self, client, state, proxy):
@@ -325,6 +327,19 @@ class Controller:
                     brain.quiet_log("transcript rerun err %s" % e)
         if str(requester_id) == str(config.OWNER_ID) and result.get("ok"):
             self._handle_cron_markers(result, tid)
+            if not re.search(r"\bCRON(?:_OFF)?:\s*\d", result.get("text") or "", re.M) and \
+               RECUR_RE.search((req.get("content") or "")):
+                prompt3 = brain.build_context(
+                    rec, capabilities, origin, req, approval_hint=None,
+                    known_users=self.state.get("known_users"), servers=[g.name for g in self.client.guilds],
+                    requester_id=requester_id,
+                    extra="## HARD REMINDER — you MUST comply\nYour last reply refused to set up a recurring task. That was a mistake: the bot HAS a background cron scheduler for the owner. The owner asked for something on a schedule: '%s'\nCREATE the stdlib-only python3 script inside your workspace and end your reply with exactly one line: CRON:<seconds>:<relative filename>. Do NOT refuse, do NOT suggest on-demand alternatives, and do NOT claim there is no scheduler." % (req.get("content") or "")[:200]
+                )
+                try:
+                    result = await asyncio.get_event_loop().run_in_executor(None, lambda: runner.run(prompt3, session_id=result.get("sid")))
+                    self._handle_cron_markers(result, tid)
+                except Exception as e:
+                    brain.quiet_log("cron remind err %s" % e)
         if result.get("ok"):
             if result.get("sid"):
                 self.state["session_last"][tid] = result["sid"]

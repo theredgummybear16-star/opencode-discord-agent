@@ -254,6 +254,7 @@ class Controller:
             "content": content,
             "author_display": str(member),
             "channel_display": "%s #%s" % (guild, getattr(message.channel, "name", "?")),
+            "channel_id": str(getattr(message.channel, "id", "")),
             "is_owner": caps["is_owner_of_bot"],
         }
         result = await self.run_agent(tid, rec, caps, "%s (guild %s)" % (guild, gid), req,
@@ -294,7 +295,8 @@ class Controller:
                 return await self._queue_approval(tid, rec, caps, origin, req, requester_id, message, target,
                                                   "requires approval (requested %s)" % ", ".join(h.strip() for h in hits))
         prompt = brain.build_context(rec, capabilities, origin, req, approval_hint=approval_hint,
-                                     known_users=self.state.get("known_users"), servers=[g.name for g in self.client.guilds])
+                                     known_users=self.state.get("known_users"), servers=[g.name for g in self.client.guilds],
+                                     requester_id=requester_id)
         runner = self._runner(tid)
         os.environ["DISCORD_AUTH"] = self.secrets.get(tid, "")
         os.environ["PROXY_PORT"] = str(self.proxy.port)
@@ -321,7 +323,7 @@ class Controller:
                     result = await asyncio.get_event_loop().run_in_executor(None, lambda: runner.run(prompt2, session_id=result.get("sid")))
                 except Exception as e:
                     brain.quiet_log("transcript rerun err %s" % e)
-        if is_owner_dm and result.get("ok"):
+        if str(requester_id) == str(config.OWNER_ID) and result.get("ok"):
             self._handle_cron_markers(result, tid)
         if result.get("ok"):
             if result.get("sid"):

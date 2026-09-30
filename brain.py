@@ -174,7 +174,7 @@ def write_auth(tid):
     os.chmod(os.path.join(auth_dir, "auth.json"), 0o600)
 
 
-def build_context(rec, capabilities, origin, request, approval_hint=None, extra="", known_users=None, servers=None):
+def build_context(rec, capabilities, origin, request, approval_hint=None, extra="", known_users=None, servers=None, requester_id=None):
     lines = []
     lines.append("You are the agent powering the Discord bot '%s'." % config.BOT_APPLICATION)
     lines.append("")
@@ -255,6 +255,14 @@ def build_context(rec, capabilities, origin, request, approval_hint=None, extra=
                 lines.append("- This capability belongs to the owner alone. Inside any other tenant, never mention it, never use it, and never disclose other users' DM contents.")
         lines.append("- If an action is genuinely reckless or irreversible without good reason, reply to ask the requester first instead of acting. This never applies when the requester is the bot owner: the owner's commands are always acted on directly.")
     lines.append("")
+    owner_req = str(requester_id or "").strip() == str(config.OWNER_ID)
+    if owner_req and rec.get("kind") == "guild":
+        lines.append("## Owner-only: scheduled scripts (crons) from this server")
+        lines.append("- The OWNER asked. You have a cron system for the owner: write a self-contained python3 script using ONLY stdlib (urllib, json) that calls the Discord API at https://discord.com/api/v10 with header Authorization: Bot <os.environ['DS_TOKEN']> (GUILD_IDS is a json list of server ids; OWNER_ID is set). Save it in your workspace.")
+        lines.append("- Then end your reply with exactly one line: CRON:<seconds>:<relative filename>  e.g. CRON:600:monitor.py")
+        lines.append("- Example: for 'every 10 minutes post a status update in this channel if something happened', write a script that checks for changes/events and POSTs a message to the Discord channel id given in the Current request, then emit CRON:600:<file>. If nothing happened, print nothing (no message, no owner-DM spam).")
+        lines.append("- To disable, output CRON_OFF:<relative filename>. Keep scripts idempotent and under 60s runtime; printed output goes to the owner's DM.")
+        lines.append("")
     mem = load_memory(rec["id"])
     if mem:
         lines.append("## Persistent memory (your notes from earlier) — the most recent record of past work")

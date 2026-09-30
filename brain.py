@@ -323,6 +323,16 @@ def known_users_section(known_users=None):
         lines.append("- %s = %s" % (info.get("name") or uid, uid))
     lines.append("- If someone mentions a name NOT on this list, you do not have their id: tell them to DM the bot once so you learn it, instead of asking for numbers.")
     return "\n".join(lines)
+
+
+def split_context(text):
+    idx = text.find("## Current request")
+    if idx < 0:
+        return None, text
+    return text[:idx].rstrip(), text[idx:]
+
+
+def audit(state, entry):
     state["audit"].append({"ts": int(time.time()), **entry})
     if len(state["audit"]) > 2000:
         state["audit"] = state["audit"][-2000:]

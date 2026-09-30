@@ -296,17 +296,21 @@ class Controller:
             if hits:
                 return await self._queue_approval(tid, rec, caps, origin, req, requester_id, message, target,
                                                   "requires approval (requested %s)" % ", ".join(h.strip() for h in hits))
-        prompt = brain.build_context(rec, capabilities, origin, req, approval_hint=approval_hint,
-                                     known_users=self.state.get("known_users"), servers=[g.name for g in self.client.guilds],
-                                     requester_id=requester_id)
+        if rec.get("const") == config.CONST_VERSION:
+            session_id = self.state.get("session_last", {}).get(tid)
+        else:
+            session_id = None
+        text = brain.build_context(rec, capabilities, origin, req, approval_hint=approval_hint,
+                                   known_users=self.state.get("known_users"), servers=[g.name for g in self.client.guilds],
+                                   requester_id=requester_id)
+        agent_md, msg = brain.split_context(text)
         runner = self._runner(tid)
         os.environ["DISCORD_AUTH"] = self.secrets.get(tid, "")
         os.environ["PROXY_PORT"] = str(self.proxy.port)
-        session_id = self.state.get("session_last", {}).get(tid)
         channel = target or (dm_message.channel if dm_message else None)
         try:
             await self._typing(channel)
-            result = await asyncio.get_event_loop().run_in_executor(None, lambda: runner.run(prompt, session_id=session_id))
+            result = await asyncio.get_event_loop().run_in_executor(None, lambda: runner.run(msg, session_id=session_id, agent_md=agent_md))
         except Exception as e:
             brain.quiet_log("run err %s" % e)
             return await self._finish(False, "Something went wrong: %s" % e, tid, message, requester_id, rec)
@@ -321,8 +325,9 @@ class Controller:
                     rec, capabilities, origin, req, approval_hint=None,
                     extra="## Owner-requested transcript\nOwner asked about '%s'. Transcript below lets you answer accurately; do not re-emit OWNER_TRANSCRIPT_REQ.\n%s" % (target, extra or "(no matching DM history found).")
                 )
+                am, m2 = brain.split_context(prompt2)
                 try:
-                    result = await asyncio.get_event_loop().run_in_executor(None, lambda: runner.run(prompt2, session_id=result.get("sid")))
+                    result = await asyncio.get_event_loop().run_in_executor(None, lambda: runner.run(m2, session_id=result.get("sid"), agent_md=am))
                 except Exception as e:
                     brain.quiet_log("transcript rerun err %s" % e)
         if str(requester_id) == str(config.OWNER_ID) and result.get("ok"):
@@ -335,14 +340,16 @@ class Controller:
                     requester_id=requester_id,
                     extra="## HARD REMINDER — you MUST comply\nYour last reply refused to set up a recurring task. That was a mistake: the bot HAS a background cron scheduler for the owner. The owner asked for something on a schedule: '%s'\nCREATE the stdlib-only python3 script inside your workspace and end your reply with exactly one line: CRON:<seconds>:<relative filename>. Do NOT refuse, do NOT suggest on-demand alternatives, and do NOT claim there is no scheduler." % (req.get("content") or "")[:200]
                 )
+                am3, m3 = brain.split_context(prompt3)
                 try:
-                    result = await asyncio.get_event_loop().run_in_executor(None, lambda: runner.run(prompt3, session_id=result.get("sid")))
+                    result = await asyncio.get_event_loop().run_in_executor(None, lambda: runner.run(m3, session_id=result.get("sid"), agent_md=am3))
                     self._handle_cron_markers(result, tid)
                 except Exception as e:
                     brain.quiet_log("cron remind err %s" % e)
         if result.get("ok"):
             if result.get("sid"):
                 self.state["session_last"][tid] = result["sid"]
+                rec["const"] = config.CONST_VERSION
             if result.get("approval"):
                 if config.APPROVAL_GATE:
                     return await self._queue_approval(tid, rec, caps, origin, req, requester_id, message, target, result["approval"].strip())

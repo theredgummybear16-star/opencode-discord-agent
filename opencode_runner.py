@@ -123,8 +123,14 @@ class Runner:
         cmd.append(prompt)
         return cmd
 
-    def run(self, prompt, session_id=None, timeout=config.REQUEST_TIMEOUT_S):
+    def run(self, prompt, session_id=None, timeout=config.REQUEST_TIMEOUT_S, agent_md=None):
         brain.write_auth(self.tid)
+        if agent_md:
+            try:
+                with open(os.path.join(brain.tenant_workspace(self.tid), "AGENTS.md"), "w", encoding="utf-8") as fh:
+                    fh.write(agent_md + "\n")
+            except Exception:
+                pass
         before = self._snapshot_sessions()
         os.makedirs(config.LOGS_DIR, exist_ok=True)
         fd, tmppath = tempfile.mkstemp(prefix="oc_run_", dir=config.LOGS_DIR)

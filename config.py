@@ -33,6 +33,7 @@ APPROVAL_TTL_S = 24 * 3600
 SWEEP_S = 60
 APPROVAL_GATE = os.environ.get("APPROVAL_GATE", "").lower() == "on"
 MEMORY_FILE = "MEMORY.md"
+CONST_VERSION = "con3"
 LONG_CHARS = int(os.environ.get("LONG_CHARS", "700"))
 LONG_WORDS = ("long", "big", "huge", "major", "revamp", "overhaul", "setup", "restructure", "reconfigure", "rebuild", "migrate", "complete")
 

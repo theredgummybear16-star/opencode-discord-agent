@@ -72,6 +72,7 @@ class Supervisor:
                 await asyncio.get_event_loop().run_in_executor(None, self._save_state)
             try:
                 await self.controller.sweep_expired()
+                await self.controller.tick_crons()
             except Exception as e:
                 brain.quiet_log("sweep err %s" % e)
             force = elapsed >= config.FORCE_S

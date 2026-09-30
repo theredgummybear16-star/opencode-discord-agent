@@ -8,6 +8,7 @@ import discord
 
 import brain
 import config
+import jobs
 import opencode_runner
 import perms
 
@@ -67,6 +68,70 @@ class Controller:
             self.proxy.set_owner_guilds([g.id for g in self.client.guilds])
         except Exception as e:
             brain.quiet_log("guild join err %s" % e)
+
+    def _safe_rel(self, rel):
+        rel = (rel or "").strip().replace("\\", "/")
+        if not rel or rel.startswith("/") or ":" in rel:
+            return None
+        parts = [p for p in rel.split("/") if p not in ("", ".", "..")]
+        return "/".join(parts) if parts else None
+
+    def _handle_cron_markers(self, result, tid):
+        text = result.get("text") or ""
+        off = re.search(r"^\s*CRON_OFF:\s*([^\s]+)", text, re.M)
+        if off:
+            rel = self._safe_rel(off.group(1))
+            crons = self.state.setdefault("crons", {})
+            for key in [k for k, v in crons.items() if v.get("script") == rel]:
+                del crons[key]
+            try:
+                brain.save_state(self.state)
+            except Exception:
+                pass
+            result["text"] = ("Disabled cron for %s.\n" % (rel or off.group(1))) + text
+        reg = re.search(r"^\s*CRON:\s*(\d+)\s*:\s*([^\s]+)", text, re.M)
+        if reg:
+            interval = int(reg.group(1))
+            rel = self._safe_rel(reg.group(2))
+            if rel and 5 <= interval <= 86400 * 30:
+                full = os.path.join(brain.tenant_workspace(tid), rel)
+                if os.path.isfile(full):
+                    key = "c_%.0f_%x" % (time.time(), abs(hash(rel)) & 0xffffff)
+                    self.state.setdefault("crons", {})[key] = {
+                        "tid": tid, "script": rel, "interval_s": interval,
+                        "notify_owner": True, "last_run": time.time(), "enabled": True,
+                    }
+                    try:
+                        brain.save_state(self.state)
+                    except Exception:
+                        pass
+                    result["text"] = ("Registered cron: every %ds runs your script, output DM'd to you.\n" % interval) + text
+                else:
+                    result["text"] = ("(CRON: script file '%s' not found in workspace — write it first)\n" % rel) + text
+        result["text"] = re.sub(r"^\s*CRON(?:_OFF)?:\s*[^\n]*\n?", "", result.get("text") or "", flags=re.M)
+
+    async def tick_crons(self):
+        crons = self.state.get("crons") or {}
+        now = time.time()
+        due = [k for k, spec in crons.items()
+               if spec.get("enabled") and now - float(spec.get("last_run") or 0) >= int(spec.get("interval_s", 3600))]
+        gids = [str(g.id) for g in self.client.guilds]
+        for key in due:
+            spec = crons.get(key)
+            if not spec:
+                continue
+            self.state["crons"][key]["last_run"] = now
+            try:
+                out = await asyncio.get_event_loop().run_in_executor(None, jobs.run_script, spec, gids)
+            except Exception as e:
+                out = "(cron crash %s)" % e
+            if out:
+                brain.quiet_log("cron %s: %s" % (spec.get("script"), out[:180]))
+                if spec.get("notify_owner"):
+                    try:
+                        await self._send_to_owner(out[:1900])
+                    except Exception as e:
+                        brain.quiet_log("cron notify err %s" % e)
 
     async def owner_notify(self, text):
         await self._send_to_owner(text)
@@ -256,6 +321,8 @@ class Controller:
                     result = await asyncio.get_event_loop().run_in_executor(None, lambda: runner.run(prompt2, session_id=result.get("sid")))
                 except Exception as e:
                     brain.quiet_log("transcript rerun err %s" % e)
+        if is_owner_dm and result.get("ok"):
+            self._handle_cron_markers(result, tid)
         if result.get("ok"):
             if result.get("sid"):
                 self.state["session_last"][tid] = result["sid"]

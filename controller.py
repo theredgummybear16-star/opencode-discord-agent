@@ -34,6 +34,20 @@ class Controller:
         self.created_threads = set()
         self.tenants_ready = False
         self.boot = time.time()
+        self._seen = {}
+        self._run_marker = os.environ.get("GITHUB_RUN_ID") or ("local%d" % int(self.boot))
+        ssh = self.state.get("ssh")
+        if isinstance(ssh, dict) and ssh.get("run_id") != self._run_marker:
+            brain.quiet_log("ssh state belongs to a previous runner instance — dropped (pid-reuse guard)")
+            self.state["ssh"] = {"active": False, "pids": [], "run_id": self._run_marker}
+
+    def _dup(self, key, window=600):
+        now = time.time()
+        if len(self._seen) > 3000:
+            self._seen = {k: v for k, v in self._seen.items() if now - v <= window}
+        last = self._seen.get(key)
+        self._seen[key] = now
+        return last is not None and now - last <= window
 
     def touch(self):
         self.last_activity = time.time()
@@ -160,6 +174,9 @@ class Controller:
     async def handle_message(self, message):
         try:
             if message.author.id == self.client.user.id:
+                return
+            if self._dup("m:%s" % message.id):
+                brain.quiet_log("dup message %s dropped" % message.id)
                 return
             self.touch()
             if isinstance(message.channel, discord.DMChannel):
@@ -308,6 +325,13 @@ class Controller:
             except Exception:
                 pass
             return
+        if self._dup("i:%s" % interaction.id, window=600):
+            brain.quiet_log("dup interaction %s dropped" % interaction.id)
+            return
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except Exception:
+            pass
         data = interaction.data or {}
         name = (data.get("name") or "").lstrip("/")
         opts = data.get("options") or []
@@ -328,12 +352,9 @@ class Controller:
             reply = "Unknown command."
         brain.audit(self.state, {"kind": "interaction", "cmd": name})
         try:
-            await interaction.response.send_message(reply, ephemeral=True)
+            await interaction.followup.send(reply, ephemeral=True)
         except Exception:
-            try:
-                await interaction.followup.send(reply, ephemeral=True)
-            except Exception:
-                pass
+            pass
         await self._act(action)
 
     async def _do_restart(self):
@@ -516,7 +537,7 @@ class Controller:
     async def _cmd_ssh_reply(self, rest):
         args = rest.split()
         act = (args[0] if args else "").lower()
-        info = self.state.setdefault("ssh", {"active": False, "pids": []})
+        info = self.state.setdefault("ssh", {"active": False, "pids": [], "run_id": self._run_marker})
         alive = sshlib.alivetree(info.get("pids"))
         if act == "on":
             if alive:
@@ -534,6 +555,7 @@ class Controller:
             info.pop("last_err", None)
             info.update(info2)
             info["active"] = True
+            info["run_id"] = self._run_marker
             try:
                 brain.save_state(self.state)
             except Exception:
@@ -562,7 +584,7 @@ class Controller:
                          "password: `%s`" % info.get("pass")]
                 try:
                     _, note = await asyncio.get_event_loop().run_in_executor(
-                        None, sshlib.ensure_webterm, info.get("web_port") or 7681, info.get("web_token") or "")
+                        None, sshlib.ensure_webterm, info.get("web_port") or 7681, info.get("web_token") or "", 2)
                     lines.append("web terminal: %s" % note)
                 except Exception as e:
                     lines.append("web terminal: BROKEN — %s (fix: /ssh off then /ssh on)" % e)
@@ -801,8 +823,11 @@ class Controller:
         try:
             if payload.user_id == self.client.user.id:
                 return
-            self.touch()
             emoji_str = str(payload.emoji)
+            if self._dup("r:%s:%s:%s" % (payload.message_id, payload.user_id, emoji_str), window=60):
+                brain.quiet_log("dup reaction dropped")
+                return
+            self.touch()
             channel = await self.client.fetch_channel(payload.channel_id)
             if isinstance(channel, discord.DMChannel):
                 if str(channel.id) == str(self.state.get("owner_dm_channel")):

@@ -215,6 +215,7 @@ def build_context(rec, capabilities, origin, request, approval_hint=None, extra=
     lines.append("")
     lines.append("## How to act inside Discord")
     lines.append("- You are given live context about the requester and the message. Reply helpfully and concisely.")
+    lines.append("- Your conversational reply is delivered automatically from your final message text — do NOT also POST that same answer into the current conversation channel via the proxy (it would appear twice). Use the proxy only for ACTIONS (edit/delete/create other messages, embeds, threads, moderation, reading channels) or to DM someone, never for delivering your reply.")
     lines.append("- Discord REST base: call http://127.0.0.1:%d (the scoped proxy)." % int(os.environ.get("PROXY_PORT", "8123")))
     lines.append("- Send HTTP requests with headers: Authorization: Bearer <per-tenant secret from env DISCORD_AUTH>, Content-Type: application/json.")
     lines.append("- The proxy only permits operations within this tenant's authorized scope (%s). If the proxy returns 403/Forbidden, the operation is out of scope: do NOT try to bypass; explain that you cannot do that here." % origin)

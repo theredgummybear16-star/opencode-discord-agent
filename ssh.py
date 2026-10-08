@@ -96,11 +96,9 @@ def install_sshd(password):
     if os.path.isfile("/tmp/oc_sshd.pid"):
         return True, "ok"
     err = ""
-    try:
-        with open("/tmp/oc_sshd.err") as fh:
-            err = fh.read()[:900]
-    except Exception:
-        pass
+    cat = _run(["sudo", "cat", "/tmp/oc_sshd.err"], timeout=15)
+    if cat is not None and (cat.stdout or "").strip():
+        err = cat.stdout[:900]
     if not err and ran is not None:
         err = ((ran.stderr or "") + (ran.stdout or "")).strip()[:400] or "pid file not created"
     return False, ("%s | start failed rc=%s: %s" % ("; ".join(steps), getattr(ran, "returncode", "none"), err.strip()))

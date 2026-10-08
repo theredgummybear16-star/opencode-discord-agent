@@ -33,6 +33,7 @@ def payload_commands():
          ]},
         {"name": "restart", "description": "Restart the whole agent instance"},
         {"name": "stop", "description": "Shut the instance down until the next scheduled run"},
+        {"name": "invite", "description": "Get the bot invite link (with slash-command scope)"},
     ]
 
 

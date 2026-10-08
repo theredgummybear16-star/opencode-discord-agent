@@ -145,6 +145,91 @@ def start_tunnel(target, logfile):
     return proc, host
 
 
+def web_ok(port, token):
+    import urllib.request
+    try:
+        req = urllib.request.urlopen("http://127.0.0.1:%d/?k=%s" % (port, token), timeout=3)
+        return req.status == 200
+    except Exception:
+        return False
+
+
+def port_pids(port):
+    pids = []
+    ran = _run(["ss", "-ltnpH", "sport = :%d" % port], timeout=15)
+    if ran is None or not ran.stdout:
+        ran = _run(["netstat", "-ltnp"], timeout=15)
+        if ran is None or not ran.stdout:
+            return pids
+        for line in (ran.stdout or "").splitlines():
+            if (":%d " % port) in line:
+                m = re.search(r"pid=(\d+)", line)
+                if m:
+                    pids.append(int(m.group(1)))
+        return pids
+    for m in re.finditer(r"pid=(\d+)", ran.stdout or ""):
+        pids.append(int(m.group(1)))
+    return pids
+
+
+def kill_port_listener(port):
+    for pid in port_pids(port):
+        if pid == os.getpid():
+            continue
+        try:
+            os.kill(pid, 9)
+        except Exception:
+            _run(["sudo", "kill", "-9", str(pid)], timeout=10)
+        try:
+            os.waitpid(pid, os.WNOHANG)
+        except Exception:
+            pass
+
+
+def _is_zombie(pid):
+    try:
+        with open("/proc/%d/stat" % pid) as fh:
+            tail = fh.read().rsplit(")", 1)[1]
+        return tail.split()[0] == "Z"
+    except Exception:
+        return False
+
+
+def spawn_webterm(port, token):
+    handle = None
+    try:
+        handle = open("/tmp/oc_web.out", "ab")
+    except Exception:
+        pass
+    return subprocess.Popen(
+        [sys.executable, os.path.join(config.ROOT, "webterm.py"), str(port), token],
+        stdout=handle, stderr=subprocess.STDOUT, start_new_session=True,
+    )
+
+
+def ensure_webterm(port, token, attempts=4):
+    last_err = ""
+    for attempt in range(attempts):
+        if web_ok(port, token):
+            pids = port_pids(port)
+            return (pids[0] if pids else None), "ok (existing)"
+        kill_port_listener(port)
+        time.sleep(0.5)
+        proc = spawn_webterm(port, token)
+        for _ in range(8):
+            time.sleep(1)
+            if web_ok(port, token):
+                return proc.pid, "ok (started try %d)" % (attempt + 1)
+            if proc.poll() is not None:
+                last_err = "webterm exited rc=%s" % proc.returncode
+                break
+            last_err = "waiting"
+        else:
+            last_err = "token not served after 8s"
+        kill_port_listener(port)
+    raise RuntimeError("web terminal did not come up (%s)" % last_err)
+
+
 def bring_up():
     os.makedirs("/tmp", exist_ok=True)
     user = get_user()
@@ -154,18 +239,11 @@ def bring_up():
         raise RuntimeError("sshd failed to start (%s)" % why)
     token = base64.urlsafe_b64encode(os.urandom(18)).decode().rstrip("=")
     web_port = 7681
-    try:
-        handle = open("/tmp/oc_web.out", "wb")
-    except Exception:
-        handle = None
-    webterm = subprocess.Popen(
-        [sys.executable, os.path.join(config.ROOT, "webterm.py"), str(web_port), token],
-        stdout=handle, stderr=subprocess.STDOUT, start_new_session=True,
-    )
+    web_pid, web_note = ensure_webterm(web_port, token)
     ssh_proc, ssh_host = start_tunnel("ssh://127.0.0.1:2222", "/tmp/oc_cf_ssh.log")
     web_proc, web_host = start_tunnel("http://127.0.0.1:%d" % web_port, "/tmp/oc_cf_web.log")
     if not ssh_host or not web_host:
-        tear_down({"pids": [ssh_proc.pid if ssh_proc else None, web_proc.pid if web_proc else None, webterm.pid]})
+        tear_down({"pids": [ssh_proc.pid if ssh_proc else None, web_proc.pid if web_proc else None, web_pid]})
         raise RuntimeError("could not establish tunnels")
     return {
         "user": user,
@@ -175,7 +253,7 @@ def bring_up():
         "web_token": token,
         "ssh_host": ssh_host,
         "web_host": web_host,
-        "pids": [ssh_proc.pid, web_proc.pid, webterm.pid],
+        "pids": [ssh_proc.pid, web_proc.pid, web_pid],
         "started": time.time(),
     }
 
@@ -187,9 +265,11 @@ def alivetree(pids):
             continue
         try:
             os.kill(pid, 0)
-            alive.append(pid)
         except Exception:
-            pass
+            continue
+        if _is_zombie(pid):
+            continue
+        alive.append(pid)
     return alive
 
 
@@ -203,3 +283,7 @@ def tear_down(info):
             except Exception:
                 pass
     _run(["sudo", "pkill", "-f", "/usr/sbin/sshd -f /tmp/oc_sshd_config"], timeout=15)
+    try:
+        kill_port_listener(7681)
+    except Exception:
+        pass

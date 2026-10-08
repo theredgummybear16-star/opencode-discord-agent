@@ -505,9 +505,10 @@ class Controller:
         msg.append("**1. Web terminal — works right now, just open it:**")
         msg.append("%s/?k=%s" % (info["web_host"], info["web_token"]))
         msg.append("")
-        msg.append("**2. SSH from your own machine** (needs the `cloudflared` CLI installed):")
+        msg.append("**2. SSH from your own machine** (needs the `cloudflared` CLI):")
         msg.append("`ssh -o ProxyCommand=\"cloudflared access ssh --hostname %s\" %s@%s`" % (host, info["user"], host))
-        msg.append("Browser-based/online SSH clients (hterm, wasm ones) can NOT reach this tunnel — use option 1 instead. Never paste `https://` as a hostname.")
+        msg.append("No cloudflared yet? `curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o ~/cloudflared && chmod +x ~/cloudflared` then use `~/cloudflared` instead of `cloudflared` above (macOS: `brew install cloudflared`).")
+        msg.append("Browser-based/online SSH websites (hterm, wasm, 'ssh client online') can NOT reach this tunnel — they can't run cloudflared. Use option 1. Never paste `https://` as a hostname.")
         msg.append("")
         msg.append("password: `%s`" % info["pass"])
         return "\n".join(msg)
@@ -559,6 +560,12 @@ class Controller:
                          "ssh: `%s`  user `%s`  port %s (web port %s)" % ((info.get("ssh_host") or "").replace("https://", ""), info.get("user"), info.get("port"), info.get("web_port")),
                          "web: %s/?k=%s" % (info.get("web_host"), info.get("web_token")),
                          "password: `%s`" % info.get("pass")]
+                try:
+                    _, note = await asyncio.get_event_loop().run_in_executor(
+                        None, sshlib.ensure_webterm, info.get("web_port") or 7681, info.get("web_token") or "")
+                    lines.append("web terminal: %s" % note)
+                except Exception as e:
+                    lines.append("web terminal: BROKEN — %s (fix: /ssh off then /ssh on)" % e)
                 return "\n".join(lines)
             msg = "SSH/web: **not running** (this runner was rebooted since it was started). Run `/ssh on`."
             if info.get("last_err"):

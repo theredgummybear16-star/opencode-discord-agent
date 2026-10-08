@@ -235,7 +235,7 @@ class Controller:
                 "/help — this list | /status — uptime, tenants, crons, servers, model\n"
                 "/cronjobs — list background crons | /run <file> [tid] — run a script now\n"
                 "/logs [n] — last n (encrypted) log lines | /tenants — list tenants\n"
-                "/memory [tid] — show a tenant's MEMORY.md | /clear [tid|all] — reset a tenant session\n"
+                "/memory [@user|userid|tid] — show that person's MEMORY.md | /clear [@user|all] — reset a session\n"
                 "/model [name] — show/change model | /ssh on|off|status|pass — cloudflared SSH + web terminal\n"
                 "/invite — get the invite link (with slash-command scope) | /restart — restart the agent instance | /stop — shut it down")
 
@@ -415,7 +415,7 @@ class Controller:
         rel = self._safe_rel(parts[0])
         if not rel:
             return "bad filename"
-        tid = parts[1] if len(parts) > 1 else self._owner_tid()
+        tid = self._resolve_tid(parts[1] if len(parts) > 1 else "")
         full = os.path.join(brain.tenant_workspace(tid), rel)
         if not os.path.isfile(full):
             return "Script `%s` not found in tenant `%s` workspace." % (rel, tid)
@@ -431,7 +431,9 @@ class Controller:
             n = int(arg or "30")
         except Exception:
             n = 30
-        return "**Last %d log lines (decrypted)**\n```\n%s\n```" % (n, brain.read_log(n))
+        n = max(1, min(n, 400))
+        logs = brain.read_log(n)
+        return "Last %d log lines:\n%s" % (n, logs)
 
     def _cmd_tenants(self):
         tenants = self.state.get("tenants") or {}
@@ -443,8 +445,25 @@ class Controller:
             lines.append("• `%s` kind=%s name=`%s` session=%s" % (tid, rec.get("kind"), (rec.get("name") or "?")[:40], active))
         return "\n".join(lines)
 
+    def _resolve_tid(self, arg):
+        s = (arg or "").strip()
+        m = re.fullmatch(r"<@!?(\d+)>", s)
+        if m:
+            return "dm_%s" % m.group(1)
+        if re.fullmatch(r"\d+", s):
+            return "dm_%s" % s
+        if s.startswith("dm_") or s.startswith("guild_"):
+            return s
+        if s:
+            known = self.state.get("known_users") or {}
+            low = s.lower()
+            for uid, info in known.items():
+                if str(info.get("name") or "").lower() == low:
+                    return "dm_%s" % uid
+        return self._owner_tid()
+
     def _cmd_memory(self, arg):
-        tid = (arg or "").strip() or self._owner_tid()
+        tid = self._resolve_tid(arg)
         mem = brain.load_memory(tid)
         return "**MEMORY.md for `%s`**\n%s" % (tid, mem or "(empty)")
 
@@ -457,7 +476,7 @@ class Controller:
                 if self.runners.pop(tid, None):
                     pass
             return "Cleared %d sessions (fresh AI context everywhere)." % n
-        tid = arg.strip() or self._owner_tid()
+        tid = self._resolve_tid(arg)
         had = sessions.pop(tid, None)
         self.runners.pop(tid, None)
         return "Session for `%s` %s" % (tid, "cleared." if had else "was already empty.")

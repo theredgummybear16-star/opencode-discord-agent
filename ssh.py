@@ -57,8 +57,11 @@ def install_sshd(password):
     _run(["sudo", "apt-get", "update", "-qq"], timeout=300)
     _run(["sudo", "apt-get", "install", "-y", "-qq", "openssh-server"], timeout=300)
     _run(["sudo", "ssh-keygen", "-A"], timeout=60)
+    if not os.path.isfile("/usr/sbin/sshd"):
+        return False, "sshd binary missing (apt-get install openssh-server failed)"
+    _run(["sudo", "mkdir", "-p", "/run/sshd"], timeout=15)
     if not set_password(password):
-        return False
+        return False, "chpasswd failed"
     with open("/tmp/oc_sshd_config", "w") as fh:
         fh.write(SSHD_CFG.format(port=2222, user=user))
     _run(["sudo", "pkill", "-f", "/usr/sbin/sshd -f /tmp/oc_sshd_config"], timeout=15)
@@ -66,9 +69,20 @@ def install_sshd(password):
         os.remove("/tmp/oc_sshd.pid")
     except Exception:
         pass
-    ran = _run(["sudo", "/usr/sbin/sshd", "-f", "/tmp/oc_sshd_config"], timeout=30)
+    _run(["sudo", "/usr/sbin/sshd", "-t", "-f", "/tmp/oc_sshd_config"], timeout=30)
+    ran = _run(["sudo", "/usr/sbin/sshd", "-f", "/tmp/oc_sshd_config", "-E", "/tmp/oc_sshd.err"], timeout=30)
     time.sleep(1.5)
-    return os.path.isfile("/tmp/oc_sshd.pid")
+    if os.path.isfile("/tmp/oc_sshd.pid"):
+        return True, "ok"
+    err = ""
+    try:
+        with open("/tmp/oc_sshd.err") as fh:
+            err = fh.read()[:900]
+    except Exception:
+        pass
+    if not err:
+        err = "pid file not created"
+    return False, ("start failed rc=%s: %s" % (getattr(ran, "returncode", "?"), err.strip()))
 
 
 def ensure_cloudflared():
@@ -116,8 +130,9 @@ def bring_up():
     os.makedirs("/tmp", exist_ok=True)
     user = get_user()
     password = gen_password()
-    if not install_sshd(password):
-        raise RuntimeError("sshd failed to start")
+    ok, why = install_sshd(password)
+    if not ok:
+        raise RuntimeError("sshd failed to start (%s)" % why)
     token = base64.urlsafe_b64encode(os.urandom(18)).decode().rstrip("=")
     web_port = 7681
     try:

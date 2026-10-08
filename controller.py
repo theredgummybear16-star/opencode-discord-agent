@@ -201,7 +201,7 @@ class Controller:
         is_owner = author_id == config.OWNER_ID
         if is_owner:
             self.state["owner_dm_channel"] = message.channel.id
-            content = (message.content or "").strip()
+            content = re.sub(r"<@!?\d+>\s*", "", (message.content or "")).strip()
             if content.startswith("/"):
                 handled = await self._handle_owner_cmd(message, content)
                 if handled:
@@ -250,40 +250,111 @@ class Controller:
         return "dm_%s" % config.OWNER_ID
 
     async def _handle_owner_cmd(self, message, content):
+        reply, action = await self._owner_cmd_reply(content)
+        if reply is None:
+            return False
+        try:
+            await self._reply(message.channel, None, reply, None)
+        except Exception:
+            pass
+        await self._act(action)
+        return True
+
+    async def _act(self, action):
+        if action == "restart":
+            await self._do_restart()
+        elif action == "stop":
+            await self._do_stop()
+
+    async def _owner_cmd_reply(self, content):
         parts = (content or "").split()
         if not parts:
-            return False
+            return "Type a command, e.g. /status", None
         cmd = parts[0].lower()
         arg = parts[1] if len(parts) > 1 else ""
         rest = " ".join(parts[1:])
-        ch = message.channel
         if cmd == "/help":
-            await self._reply(ch, None, self.CMD_HELP, None)
-        elif cmd == "/status":
-            await self._reply(ch, None, self._cmd_status(rest), None)
-        elif cmd == "/cronjobs":
-            await self._reply(ch, None, self._cmd_cronjobs(), None)
-        elif cmd == "/run":
-            await self._reply(ch, None, self._cmd_run(rest), None)
-        elif cmd == "/logs":
-            await self._reply(ch, None, self._cmd_logs(arg), None)
-        elif cmd == "/tenants":
-            await self._reply(ch, None, self._cmd_tenants(), None)
-        elif cmd == "/memory":
-            await self._reply(ch, None, self._cmd_memory(arg), None)
-        elif cmd == "/clear":
-            await self._reply(ch, None, await self._cmd_clear(arg), None)
-        elif cmd == "/model":
-            await self._reply(ch, None, self._cmd_model(arg), None)
-        elif cmd == "/ssh":
-            await self._cmd_ssh(ch, rest)
-        elif cmd == "/restart":
-            await self._cmd_restart(ch)
-        elif cmd == "/stop":
-            await self._cmd_stop(ch)
-        else:
-            return False
-        return True
+            return self.CMD_HELP, None
+        if cmd == "/status":
+            return self._cmd_status(rest), None
+        if cmd == "/cronjobs":
+            return self._cmd_cronjobs(), None
+        if cmd == "/run":
+            return self._cmd_run(rest), None
+        if cmd == "/logs":
+            return self._cmd_logs(arg), None
+        if cmd == "/tenants":
+            return self._cmd_tenants(), None
+        if cmd == "/memory":
+            return self._cmd_memory(arg), None
+        if cmd == "/clear":
+            return await self._cmd_clear(arg), None
+        if cmd == "/model":
+            return self._cmd_model(arg), None
+        if cmd == "/ssh":
+            return await self._cmd_ssh_reply(rest), None
+        if cmd == "/restart":
+            return ("Restarting the agent instance now…",) + ("restart",)
+        if cmd == "/stop":
+            return ("Shutting down. Offline until the next scheduled run or a manual restart dispatch.",) + ("stop",)
+        return None, None
+
+    async def handle_interaction(self, interaction):
+        if str(interaction.user.id) != config.OWNER_ID:
+            try:
+                await interaction.response.send_message("Owner-only commands, sorry.", ephemeral=True)
+            except Exception:
+                pass
+            return
+        data = interaction.data or {}
+        name = (data.get("name") or "").lstrip("/")
+        opts = data.get("options") or []
+        vals = []
+
+        def flat(items):
+            for o in items:
+                t = o.get("type")
+                if t in (1, 2):
+                    flat(o.get("options") or [])
+                elif o.get("value") is not None:
+                    vals.append(str(o["value"]))
+
+        flat(opts)
+        content = "/%s%s" % (name, (" " + " ".join(vals)) if vals else "")
+        reply, action = await self._owner_cmd_reply(content)
+        if reply is None:
+            reply = "Unknown command."
+        brain.audit(self.state, {"kind": "interaction", "cmd": name})
+        try:
+            await interaction.response.send_message(reply, ephemeral=True)
+        except Exception:
+            try:
+                await interaction.followup.send(reply, ephemeral=True)
+            except Exception:
+                pass
+        await self._act(action)
+
+    async def _do_restart(self):
+        if not config.GH_ADMIN_TOKEN:
+            return
+        try:
+            await asyncio.get_event_loop().run_in_executor(None, self._prep_exit)
+        except Exception as e:
+            brain.quiet_log("restart prep err %s" % e)
+        try:
+            await asyncio.get_event_loop().run_in_executor(None, gitops.dispatch)
+        except Exception as e:
+            brain.quiet_log("restart dispatch err %s" % e)
+        time.sleep(1)
+        os._exit(0)
+
+    async def _do_stop(self):
+        try:
+            await asyncio.get_event_loop().run_in_executor(None, self._prep_exit)
+        except Exception:
+            pass
+        time.sleep(1)
+        os._exit(0)
 
     def _cmd_status(self, arg):
         tenants = self.state.get("tenants") or {}
@@ -392,46 +463,40 @@ class Controller:
             brain.quiet_log("model save err %s" % e)
         return "Model changed: `%s` -> `%s` (fresh runners on next use)." % (old, name)
 
-    async def _cmd_ssh(self, ch, rest):
+    async def _cmd_ssh_reply(self, rest):
         args = rest.split()
         act = (args[0] if args else "").lower()
         info = self.state.setdefault("ssh", {"active": False, "pids": []})
         alive = sshlib.alivetree(info.get("pids"))
         if act == "on":
             if alive:
-                await self._reply(ch, None, "SSH/web already running. Use `/ssh status` (or `/ssh off` then `/ssh on` to rotate credentials).", None)
-                return
-            await self._reply(ch, None, "Starting SSH + web terminal… this can take up to ~90s (installs openssh-server, downloads cloudflared, opens tunnels).", None)
+                return "SSH/web already running. Use `/ssh status` (or `/ssh off` then `/ssh on` to rotate credentials)."
             try:
                 info2 = await asyncio.get_event_loop().run_in_executor(None, sshlib.bring_up)
             except Exception as e:
                 brain.quiet_log("ssh on err %s" % e)
-                await self._reply(ch, None, "SSH setup failed: %s" % e, None)
-                return
+                return "SSH setup failed: %s" % e
             info.update(info2)
             info["active"] = True
             try:
                 brain.save_state(self.state)
             except Exception:
                 pass
-            msg = (
-                "**SSH + web terminal are up** (username `%s`, TTL = this run only).\n\n"
-                "• SSH (need cloudflared on your machine):\n"
-                "`ssh -o ProxyCommand=\"cloudflared access ssh --hostname %%h\" %s@%s`\n"
-                "• Web terminal: %s/?k=%s\n\n"
-                "password: `%s`\n\n"
-                "Methods: `%%h` with the %s hostname above." % (
-                    info["user"], info["user"], info["ssh_host"].replace("https://", ""),
-                    info["web_host"], info["web_token"], info["pass"], info["ssh_host"].replace("https://", ""))
-            )
-            await self._reply(ch, None, msg, None)
-            return
+            host = info["ssh_host"].replace("https://", "")
+            msg = []
+            msg.append("**SSH + web terminal are up** (username `%s`, TTL = this run only)." % info["user"])
+            msg.append("")
+            msg.append("• SSH (needs cloudflared on your machine):")
+            msg.append("`ssh -o ProxyCommand=\"cloudflared access ssh --hostname %s\" %s@%s`" % (host.replace(".trycloudflare.com", ".trycloudflare.com"), info["user"], host))
+            msg.append("• Web terminal: %s/?k=%s" % (info["web_host"], info["web_token"]))
+            msg.append("")
+            msg.append("password: `%s`" % info["pass"])
+            return "\n".join(msg)
         if act == "off":
             if not alive:
-                await self._reply(ch, None, "Nothing is running (tunnels from a previous run died with that runner). Marking off.", None)
-            else:
-                await asyncio.get_event_loop().run_in_executor(None, sshlib.tear_down, info)
-                await self._reply(ch, None, "SSH + web terminal stopped.", None)
+                return "Nothing is running (tunnels from a previous run died with that runner). Marking off."
+            await asyncio.get_event_loop().run_in_executor(None, sshlib.tear_down, info)
+            out = "SSH + web terminal stopped."
             if "pids" in info:
                 info["pids"] = []
             info["active"] = False
@@ -441,33 +506,28 @@ class Controller:
                 brain.save_state(self.state)
             except Exception:
                 pass
-            return
+            return out
         if act == "status":
             if alive:
                 lines = ["**SSH/web status: RUNNING** (uptime %s)" % self._hms(time.time() - info.get("started", self.boot)),
-                         "ssh: `%s`  user `%s`  port %s" % (info.get("ssh_host"), info.get("user"), info.get("port")),
+                         "ssh: `%s`  user `%s`  port %s (web port %s)" % (info.get("ssh_host"), info.get("user"), info.get("port"), info.get("web_port")),
                          "web: %s/?k=%s" % (info.get("web_host"), info.get("web_token")),
                          "password: `%s`" % info.get("pass")]
-                await self._reply(ch, None, "\n".join(lines), None)
-            else:
-                await self._reply(ch, None, "SSH/web: **not running** (this runner was rebooted since it was started). Run `/ssh on`.", None)
-            return
+                return "\n".join(lines)
+            return "SSH/web: **not running** (this runner was rebooted since it was started). Run `/ssh on`."
         if act == "pass":
             if not alive:
-                await self._reply(ch, None, "SSH isn't running — `/ssh on` first.", None)
-                return
+                return "SSH isn't running — `/ssh on` first."
             p = sshlib.gen_password()
             if not sshlib.set_password(p):
-                await self._reply(ch, None, "Could not rotate password.", None)
-                return
+                return "Could not rotate password."
             info["pass"] = p
             try:
                 brain.save_state(self.state)
             except Exception:
                 pass
-            await self._reply(ch, None, "New password: `%s`" % p, None)
-            return
-        await self._reply(ch, None, "Usage: `/ssh on` | `/ssh off` | `/ssh status` | `/ssh pass`", None)
+            return "New password: `%s`" % p
+        return "Usage: `/ssh on` | `/ssh off` | `/ssh status` | `/ssh pass`"
 
     def _prep_exit(self):
         for tid in list(self.state.get("tenants", {})):
@@ -485,29 +545,10 @@ class Controller:
             brain.quiet_log("finalize err %s" % e)
 
     async def _cmd_restart(self, ch):
-        if not config.GH_ADMIN_TOKEN:
-            await self._reply(ch, None, "Restart requested, but this run has no GH_ADMIN_TOKEN so it can't self-dispatch. Ask the operator to trigger a new run.", None)
-            return
-        await self._reply(ch, None, "Restarting the agent instance now…", None)
-        try:
-            await asyncio.get_event_loop().run_in_executor(None, self._prep_exit)
-        except Exception as e:
-            brain.quiet_log("restart prep err %s" % e)
-        try:
-            await asyncio.get_event_loop().run_in_executor(None, gitops.dispatch)
-        except Exception as e:
-            brain.quiet_log("restart dispatch err %s" % e)
-        time.sleep(1)
-        os._exit(0)
+        return
 
     async def _cmd_stop(self, ch):
-        await self._reply(ch, None, "Shutting down. The instance will be offline until the next scheduled run or a manual restart dispatch.", None)
-        try:
-            await asyncio.get_event_loop().run_in_executor(None, self._prep_exit)
-        except Exception:
-            pass
-        time.sleep(1)
-        os._exit(0)
+        return
 
     async def _handle_guild(self, message):
         try:
@@ -527,7 +568,11 @@ class Controller:
             self._runner(tid).secret = secret
         caps = perms.member_capabilities(member)
         caps["is_owner_of_bot"] = str(member.id) == config.OWNER_ID
-        content = message.content or ""
+        content = re.sub(r"<@!?\d+>\s*", "", (message.content or "")).strip()
+        if caps["is_owner_of_bot"] and content.startswith("/"):
+            handled = await self._handle_owner_cmd(message, content)
+            if handled:
+                return
         target = message.channel
         if rec.get("config", {}).get("long_threads", True):
             if len(content) > config.LONG_CHARS or any(w in content.lower() for w in config.LONG_WORDS):

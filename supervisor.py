@@ -9,6 +9,7 @@ import brain
 import config
 import gitops
 import proxy as proxymod
+import slash as slashlib
 from controller import Controller
 
 LOOP_S = 2
@@ -43,12 +44,28 @@ class Supervisor:
             acts = discord.Activity(type=discord.ActivityType.watching, name="the ai kitchen")
             await client.change_presence(activity=acts)
             await controller.on_online()
+
+            def _register_slash():
+                try:
+                    slashlib.register_commands(int(client.user.id), config.DS_TOKEN)
+                    brain.quiet_log("slash commands registered")
+                except Exception as e:
+                    brain.quiet_log("slash register err %s" % e)
+
+            asyncio.get_event_loop().run_in_executor(None, _register_slash)
             asyncio.get_event_loop().run_in_executor(None, gitops.commit_and_push, config.REPO, "online %d" % int(time.time()))
             client.loop.create_task(self._lifecycle())
 
         @client.event
         async def on_message(message):
             await controller.handle_message(message)
+
+        @client.event
+        async def on_interaction(interaction):
+            try:
+                await controller.handle_interaction(interaction)
+            except Exception as e:
+                brain.quiet_log("interaction err %s" % e)
 
         @client.event
         async def on_guild_join(guild):

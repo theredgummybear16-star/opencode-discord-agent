@@ -18,7 +18,7 @@ HTML = """<!doctype html>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
 <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
 <style>
-html,body{margin:0;height:100%%;background:#000;overflow:hidden}
+html,body{margin:0;height:100%;background:#000;overflow:hidden}
 #term{height:100vh;width:100vw;padding:4px;box-sizing:border-box}
 </style></head>
 <body><div id="term"></div>
@@ -27,7 +27,7 @@ const t=new Terminal({cursorBlink:true,fontSize:14,scrollback:5000,
   theme:{background:'#000',foreground:'#e6e6e6',cursor:'#ffffff'}});
 t.open(document.getElementById('term'));
 const ws=new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws?k=__TOKEN__');
-ws.onopen=()=>t.focus();
+ws.onopen=()=>{t.focus();ws.send(JSON.stringify({cols:t.cols,rows:t.rows}))};
 ws.onmessage=e=>t.write(typeof e.data==='string'?e.data:new TextDecoder().decode(e.data));
 ws.onclose=()=>t.write('\\r\\n[connection closed]\\r\\n');
 ws.onerror=()=>t.write('\\r\\n[connection error]\\r\\n');
@@ -52,6 +52,14 @@ async def index(request):
     if not _ok(request):
         return web.Response(status=403, text="forbidden")
     return web.Response(content_type="text/html", text=HTML.replace("__TOKEN__", TOKEN))
+
+
+async def _send_text(ws, closed, text):
+    try:
+        if not ws.closed:
+            await ws.send_str(text)
+    except Exception:
+        closed.set()
 
 
 async def ws_handler(request):
@@ -83,10 +91,11 @@ async def ws_handler(request):
             return
         if not ws.closed:
             try:
-                ws.send_str(data.decode("utf-8", "replace"))
+                asyncio.ensure_future(_send_text(ws, closed, data.decode("utf-8", "replace")))
             except Exception:
                 closed.set()
 
+    set_size(master, 100, 30)
     loop.add_reader(master, pump)
 
     async def recv():

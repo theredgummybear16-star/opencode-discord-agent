@@ -497,6 +497,21 @@ class Controller:
             brain.quiet_log("model save err %s" % e)
         return "Model changed: `%s` -> `%s` (fresh runners on next use)." % (old, name)
 
+    def _ssh_up_message(self, info):
+        host = info["ssh_host"].replace("https://", "")
+        msg = []
+        msg.append("**Web terminal + SSH are up** (username `%s`, TTL = this run only)." % info["user"])
+        msg.append("")
+        msg.append("**1. Web terminal — works right now, just open it:**")
+        msg.append("%s/?k=%s" % (info["web_host"], info["web_token"]))
+        msg.append("")
+        msg.append("**2. SSH from your own machine** (needs the `cloudflared` CLI installed):")
+        msg.append("`ssh -o ProxyCommand=\"cloudflared access ssh --hostname %s\" %s@%s`" % (host, info["user"], host))
+        msg.append("Browser-based/online SSH clients (hterm, wasm ones) can NOT reach this tunnel — use option 1 instead. Never paste `https://` as a hostname.")
+        msg.append("")
+        msg.append("password: `%s`" % info["pass"])
+        return "\n".join(msg)
+
     async def _cmd_ssh_reply(self, rest):
         args = rest.split()
         act = (args[0] if args else "").lower()
@@ -522,16 +537,7 @@ class Controller:
                 brain.save_state(self.state)
             except Exception:
                 pass
-            host = info["ssh_host"].replace("https://", "")
-            msg = []
-            msg.append("**SSH + web terminal are up** (username `%s`, TTL = this run only)." % info["user"])
-            msg.append("")
-            msg.append("• SSH (needs cloudflared on your machine):")
-            msg.append("`ssh -o ProxyCommand=\"cloudflared access ssh --hostname %s\" %s@%s`" % (host.replace(".trycloudflare.com", ".trycloudflare.com"), info["user"], host))
-            msg.append("• Web terminal: %s/?k=%s" % (info["web_host"], info["web_token"]))
-            msg.append("")
-            msg.append("password: `%s`" % info["pass"])
-            return "\n".join(msg)
+            return self._ssh_up_message(info)
         if act == "off":
             if not alive:
                 return "Nothing is running (tunnels from a previous run died with that runner). Marking off."
@@ -550,7 +556,7 @@ class Controller:
         if act == "status":
             if alive:
                 lines = ["**SSH/web status: RUNNING** (uptime %s)" % self._hms(time.time() - info.get("started", self.boot)),
-                         "ssh: `%s`  user `%s`  port %s (web port %s)" % (info.get("ssh_host"), info.get("user"), info.get("port"), info.get("web_port")),
+                         "ssh: `%s`  user `%s`  port %s (web port %s)" % ((info.get("ssh_host") or "").replace("https://", ""), info.get("user"), info.get("port"), info.get("web_port")),
                          "web: %s/?k=%s" % (info.get("web_host"), info.get("web_token")),
                          "password: `%s`" % info.get("pass")]
                 return "\n".join(lines)

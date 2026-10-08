@@ -1,0 +1,56 @@
+name: diag
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: reproduce sshd bring-up
+        run: |
+          set +e
+          echo "== env"; whoami; id; /usr/sbin/sshd -V 2>&1 | head -1 || echo "no sshd binary yet"
+          echo "== python import check"
+          python3 - <<'PY'
+          import os, subprocess, sys, time
+          sys.path.insert(0, ".")
+          import ssh
+
+          def run(label, cmd, timeout=300):
+              try:
+                  r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+                  print(f"{label}: rc={r.returncode} out={r.stdout[-400:]!r} err={r.stderr[-400:]!r}")
+                  return r
+              except Exception as e:
+                  print(f"{label}: EXCEPTION {e}")
+                  return None
+
+          print("user:", ssh.get_user(), "USER=", os.environ.get("USER"))
+          run("apt-update", ["sudo", "apt-get", "update", "-qq"])
+          run("apt-install", ["sudo", "apt-get", "install", "-y", "-qq", "openssh-server"])
+          print("sshd exists:", os.path.isfile("/usr/sbin/sshd"))
+          run("keygen", ["sudo", "ssh-keygen", "-A"])
+          run("runsshd-dir", ["sudo", "mkdir", "-p", "/run/sshd"])
+          print("set_password:", ssh.set_password("DiagPass-Qwerty1234567890"))
+          user = ssh.get_user()
+          with open("/tmp/oc_sshd_config", "w") as fh:
+              fh.write(ssh.SSHD_CFG.format(port=2222, user=user))
+          print("---- config ----")
+          print(open("/tmp/oc_sshd_config").read())
+          run("sshd-t", ["sudo", "/usr/sbin/sshd", "-t", "-f", "/tmp/oc_sshd_config"])
+          try:
+              os.remove("/tmp/oc_sshd.pid")
+          except Exception:
+              pass
+          run("sshd-start", ["sudo", "/usr/sbin/sshd", "-f", "/tmp/oc_sshd_config", "-E", "/tmp/oc_sshd.err"])
+          time.sleep(2)
+          print("pidfile:", os.path.isfile("/tmp/oc_sshd.pid"))
+          try:
+              print("errfile:", open("/tmp/oc_sshd.err").read()[:800])
+          except Exception as e:
+              print("errfile missing:", e)
+          print("full install_sshd:", ssh.install_sshd("DiagPass2-Zxcvbn1234567890"))
+          run("listening", ["bash", "-lc", "ss -ltnp 2>/dev/null | grep 2222 || netstat -ltnp 2>/dev/null | grep 2222 || echo 'nothing on 2222'"])
+          run("cleanup", ["sudo", "pkill", "-f", "/usr/sbin/sshd -f /tmp/oc_sshd_config"])
+          PY

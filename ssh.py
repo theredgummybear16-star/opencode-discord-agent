@@ -52,16 +52,34 @@ def set_password(password):
     return ran is not None and ran.returncode == 0
 
 
+def _apt_update_install():
+    steps = []
+    for attempt in range(3):
+        last = _run(["sudo", "apt-get", "update", "-qq"], timeout=300)
+        if last is not None and last.returncode == 0:
+            steps.append("apt-update=ok")
+            break
+        steps.append("apt-update rc=%s try%d" % (getattr(last, "returncode", "none"), attempt + 1))
+        time.sleep(5)
+    for attempt in range(2):
+        last = _run(["sudo", "apt-get", "install", "-y", "-qq", "openssh-server"], timeout=300)
+        if last is not None and last.returncode == 0:
+            steps.append("apt-install=ok")
+            return steps, True
+        steps.append("apt-install rc=%s try%d" % (getattr(last, "returncode", "none"), attempt + 1))
+        time.sleep(5)
+    return steps, False
+
+
 def install_sshd(password):
     user = get_user()
-    _run(["sudo", "apt-get", "update", "-qq"], timeout=300)
-    _run(["sudo", "apt-get", "install", "-y", "-qq", "openssh-server"], timeout=300)
+    steps, apt_ok = _apt_update_install()
     _run(["sudo", "ssh-keygen", "-A"], timeout=60)
     if not os.path.isfile("/usr/sbin/sshd"):
-        return False, "sshd binary missing (apt-get install openssh-server failed)"
+        return False, "%s | sshd binary missing (apt failed)" % "; ".join(steps)
     _run(["sudo", "mkdir", "-p", "/run/sshd"], timeout=15)
     if not set_password(password):
-        return False, "chpasswd failed"
+        return False, "%s | chpasswd failed" % "; ".join(steps)
     with open("/tmp/oc_sshd_config", "w") as fh:
         fh.write(SSHD_CFG.format(port=2222, user=user))
     _run(["sudo", "pkill", "-f", "/usr/sbin/sshd -f /tmp/oc_sshd_config"], timeout=15)
@@ -69,9 +87,12 @@ def install_sshd(password):
         os.remove("/tmp/oc_sshd.pid")
     except Exception:
         pass
-    _run(["sudo", "/usr/sbin/sshd", "-t", "-f", "/tmp/oc_sshd_config"], timeout=30)
+    t = _run(["sudo", "/usr/sbin/sshd", "-t", "-f", "/tmp/oc_sshd_config"], timeout=30)
+    if t is not None and t.returncode != 0:
+        detail = ((t.stderr or "") + (t.stdout or "")).strip()[:400]
+        return False, "%s | config check failed rc=%s: %s" % ("; ".join(steps), t.returncode, detail)
     ran = _run(["sudo", "/usr/sbin/sshd", "-f", "/tmp/oc_sshd_config", "-E", "/tmp/oc_sshd.err"], timeout=30)
-    time.sleep(1.5)
+    time.sleep(2)
     if os.path.isfile("/tmp/oc_sshd.pid"):
         return True, "ok"
     err = ""
@@ -80,9 +101,9 @@ def install_sshd(password):
             err = fh.read()[:900]
     except Exception:
         pass
-    if not err:
-        err = "pid file not created"
-    return False, ("start failed rc=%s: %s" % (getattr(ran, "returncode", "?"), err.strip()))
+    if not err and ran is not None:
+        err = ((ran.stderr or "") + (ran.stdout or "")).strip()[:400] or "pid file not created"
+    return False, ("%s | start failed rc=%s: %s" % ("; ".join(steps), getattr(ran, "returncode", "none"), err.strip()))
 
 
 def ensure_cloudflared():

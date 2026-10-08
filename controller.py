@@ -509,7 +509,13 @@ class Controller:
                 info2 = await asyncio.get_event_loop().run_in_executor(None, sshlib.bring_up)
             except Exception as e:
                 brain.quiet_log("ssh on err %s" % e)
+                info["last_err"] = str(e)
+                try:
+                    brain.save_state(self.state)
+                except Exception:
+                    pass
                 return "SSH setup failed: %s" % e
+            info.pop("last_err", None)
             info.update(info2)
             info["active"] = True
             try:
@@ -548,7 +554,10 @@ class Controller:
                          "web: %s/?k=%s" % (info.get("web_host"), info.get("web_token")),
                          "password: `%s`" % info.get("pass")]
                 return "\n".join(lines)
-            return "SSH/web: **not running** (this runner was rebooted since it was started). Run `/ssh on`."
+            msg = "SSH/web: **not running** (this runner was rebooted since it was started). Run `/ssh on`."
+            if info.get("last_err"):
+                msg += "\nLast `/ssh on` error: %s" % info["last_err"]
+            return msg
         if act == "pass":
             if not alive:
                 return "SSH isn't running — `/ssh on` first."

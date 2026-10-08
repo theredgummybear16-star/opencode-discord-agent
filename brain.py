@@ -257,6 +257,10 @@ def build_context(rec, capabilities, origin, request, approval_hint=None, extra=
                 lines.append("- This capability belongs to the owner alone. Inside any other tenant, never mention it, never use it, and never disclose other users' DM contents.")
         lines.append("- If an action is genuinely reckless or irreversible without good reason, reply to ask the requester first instead of acting. This never applies when the requester is the bot owner: the owner's commands are always acted on directly.")
     lines.append("")
+    if rec.get("kind") == "dm" and str(rec.get("user_id")) == config.OWNER_ID:
+        lines.append("## Owner instant commands (handled by the platform, never you)")
+        lines.append("- Slash-commands like /status /restart /cronjobs /ssh /logs /run /tenants /memory /clear /model /help /stop are instant, owner-only, DM-only, and are handled before the model ever runs. Never try to run one yourself, never claim they don't exist, and don't refuse on their behalf.")
+        lines.append("")
     owner_req = str(requester_id or "").strip() == str(config.OWNER_ID)
     if owner_req and rec.get("kind") == "guild":
         lines.append("## Owner-only: scheduled scripts (crons) from this server")
@@ -339,9 +343,34 @@ def audit(state, entry):
 
 
 def quiet_log(msg):
+    line = "%d|%s" % (int(time.time()), msg)
+    try:
+        cypher = _encrypt(msg.encode("utf-8", "replace"))
+        line = "%d|b64:%s" % (int(time.time()), base64.b64encode(cypher).decode())
+    except Exception:
+        pass
     try:
         os.makedirs(config.LOGS_DIR, exist_ok=True)
         with open(os.path.join(config.LOGS_DIR, "cycle.log"), "a") as fh:
-            fh.write("%s %s\n" % (time.strftime("%Y-%m-%d %H:%M:%S"), msg))
+            fh.write(line + "\n")
     except Exception:
         pass
+
+
+def read_log(n=30):
+    try:
+        with open(os.path.join(config.LOGS_DIR, "cycle.log"), "r", errors="replace") as fh:
+            raw = [line.rstrip("\n") for line in fh.readlines()]
+    except Exception:
+        return "(no logs yet)"
+    out = []
+    for line in raw[-int(n):]:
+        if "|b64:" in line:
+            ts, rest = line.split("|b64:", 1)
+            try:
+                out.append("%s %s" % (ts, _decrypt(base64.b64decode(rest)).decode("utf-8", "replace")))
+            except Exception:
+                out.append(rest)
+        else:
+            out.append(line)
+    return "\n".join(out) or "(empty log)"

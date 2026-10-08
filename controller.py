@@ -237,7 +237,7 @@ class Controller:
                 "/logs [n] — last n (encrypted) log lines | /tenants — list tenants\n"
                 "/memory [tid] — show a tenant's MEMORY.md | /clear [tid|all] — reset a tenant session\n"
                 "/model [name] — show/change model | /ssh on|off|status|pass — cloudflared SSH + web terminal\n"
-                "/restart — restart the agent instance | /stop — shut it down")
+                "/invite — get the invite link (with slash-command scope) | /restart — restart the agent instance | /stop — shut it down")
 
     @staticmethod
     def _hms(secs):
@@ -293,6 +293,8 @@ class Controller:
             return self._cmd_model(arg), None
         if cmd == "/ssh":
             return await self._cmd_ssh_reply(rest), None
+        if cmd == "/invite":
+            return self._cmd_invite(), None
         if cmd == "/restart":
             return ("Restarting the agent instance now…",) + ("restart",)
         if cmd == "/stop":
@@ -373,12 +375,25 @@ class Controller:
             "servers: %s" % guilds,
             "proxy port: %d | owner dm: %s" % (self.proxy.port, bool(self.state.get("owner_dm_channel"))),
             "self-restart token: %s" % ("yes" if config.GH_ADMIN_TOKEN else "no"),
+            "slash commands: %s" % (self.state.get("slash_registered") or "not registered yet"),
         ]
         if arg == "deep":
             audit = self.state.get("audit") or []
             lines.append("audit events: %d (last: %s)" % (len(audit), str(audit[-1] if audit else "none")))
             lines.append("crons: " + (", ".join(sorted(crons)) if crons else "none"))
         return "\n".join(lines)
+
+    def _cmd_invite(self):
+        cid = None
+        try:
+            if self.client and self.client.user:
+                cid = self.client.user.id
+        except Exception:
+            cid = None
+        cid = cid or 1481049839130247400
+        return ("Re-add the bot with BOTH scopes for real slash commands (admin role alone won't enable them):\n"
+                "https://discord.com/oauth2/authorize?client_id=%s&permissions=8&scope=bot%%20applications.commands\n\n"
+                "Until then, text commands (/status etc.) already work from your DM." % cid)
 
     def _cmd_cronjobs(self):
         crons = self.state.get("crons") or {}

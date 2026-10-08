@@ -48,6 +48,7 @@ class Supervisor:
             def _register_slash():
                 try:
                     slashlib.register_commands(int(client.user.id), config.DS_TOKEN)
+                    self.state["slash_registered"] = len(slashlib.payload_commands())
                     brain.quiet_log("slash commands registered")
                 except Exception as e:
                     brain.quiet_log("slash register err %s" % e)

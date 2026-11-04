@@ -184,6 +184,8 @@ def write_auth(tid):
             auth = {}
     if config.ZEN_KEY and "opencode" not in auth:
         auth["opencode"] = {"type": "api", "key": config.ZEN_KEY}
+    if getattr(config, "OLLAMA_API_KEY", "") and "ollama-cloud" not in auth:
+        auth["ollama-cloud"] = {"type": "api", "key": config.OLLAMA_API_KEY}
     with open(os.path.join(auth_dir, "auth.json"), "w") as fh:
         json.dump(auth, fh)
     os.chmod(os.path.join(auth_dir, "auth.json"), 0o600)

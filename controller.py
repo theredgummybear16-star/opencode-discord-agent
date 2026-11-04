@@ -346,6 +346,30 @@ class Controller:
                     vals.append(str(o["value"]))
 
         flat(opts)
+        prompt = " ".join(vals).strip()
+
+        if name in ("ask", "opencode"):
+            brain.audit(self.state, {"kind": "interaction", "cmd": name})
+            if not prompt:
+                reply = "Usage: /ask <prompt>"
+            else:
+                tid = self._owner_tid()
+                rec = brain.ensure_tenant(self.state, tid, "dm", "owner", user_id=config.OWNER_ID)
+                caps = {"is_owner_of_bot": True, "display": "owner", "is_guild_owner": False}
+                req = {"content": prompt, "author_display": "owner (slash)"}
+                try:
+                    result = await self.run_agent(tid, rec, caps, "DM chat", req, requester_id=interaction.user.id, message=None)
+                    reply = result.get("reply") if isinstance(result, dict) else (result or "Done.")
+                except Exception as e:
+                    brain.quiet_log("slash ask err %s" % e)
+                    reply = "Something went wrong: %s" % e
+            try:
+                for chunk in [reply[i:i + 1900] for i in range(0, len(reply or ""), 1900)] or ["Done."]:
+                    await interaction.followup.send(chunk, ephemeral=True)
+            except Exception:
+                pass
+            return
+
         content = "/%s%s" % (name, (" " + " ".join(vals)) if vals else "")
         reply, action = await self._owner_cmd_reply(content)
         if reply is None:
@@ -413,8 +437,9 @@ class Controller:
             cid = None
         cid = cid or 1481049839130247400
         return ("Re-add the bot with BOTH scopes for real slash commands (admin role alone won't enable them):\n"
-                "https://discord.com/oauth2/authorize?client_id=%s&permissions=8&scope=bot%%20applications.commands\n\n"
-                "Until then, text commands (/status etc.) already work from your DM." % cid)
+                "Server install: https://discord.com/oauth2/authorize?client_id=%s&permissions=8&scope=bot%%20applications.commands\n\n"
+                "Account install (use slash commands anywhere on your account): https://discord.com/oauth2/authorize?client_id=%s&scope=applications.commands&integration_type=1\n\n"
+                "Until then, text commands (/status etc.) already work from your DM." % (cid, cid))
 
     def _cmd_cronjobs(self):
         crons = self.state.get("crons") or {}

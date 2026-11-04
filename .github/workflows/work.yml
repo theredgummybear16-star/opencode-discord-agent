@@ -50,6 +50,7 @@ jobs:
           GH_ADMIN_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
           BRAIN_PASSPHRASE: ${{ secrets.BRAIN_PASSPHRASE }}
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
           AUTH_JSON: ${{ secrets.AUTH_JSON }}
           OPENCODE_MODEL: ${{ secrets.OPENCODE_MODEL }}
           OWNER_ID: ${{ secrets.OWNER_ID }}

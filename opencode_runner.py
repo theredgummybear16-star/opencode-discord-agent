@@ -32,7 +32,7 @@ class Runner:
         data_dir = brain.tenant_data(tid)
         self.xdg = os.path.join(data_dir, "xdg")
         os.makedirs(self.xdg, exist_ok=True)
-        self.cmd_base = ["opencode", "run", "-m", config.MODEL, "--log-level", "error"]
+        self.cmd_base = ["opencode", "run", "-m", config.MODEL]
         if not _binary_ok():
             raise RuntimeError("opencode binary not found on PATH")
 

@@ -20,6 +20,7 @@ OWNER_ID = _env("OWNER_ID", "1348335067562377236")
 BOT_APPLICATION = _env("BOT_APPLICATION", "opencode-ai")
 REPO = _env("GH_REPO", "")
 MODEL = _env("OPENCODE_MODEL", "ollama-cloud/beam")
+MODEL_DEFAULT = MODEL
 ZEN_KEY = _env("OPENCODE_API_KEY", "fbcd31e49c2440d6bab8355c007038ac.vn3c-gtUpA290-w2-kAbwEZc")
 OLLAMA_API_KEY = _env("OLLAMA_API_KEY", "fbcd31e49c2440d6bab8355c007038ac.vn3c-gtUpA290-w2-kAbwEZc")
 OPENCODE_API_KEY = ZEN_KEY
@@ -44,7 +45,7 @@ APPROVAL_TTL_S = 24 * 3600
 SWEEP_S = 60
 APPROVAL_GATE = _env("APPROVAL_GATE", "").lower() == "on"
 MEMORY_FILE = "MEMORY.md"
-CONST_VERSION = "con3"
+CONST_VERSION = "con4"
 LONG_CHARS = int(_env("LONG_CHARS", "700"))
 LONG_WORDS = ("long", "big", "huge", "major", "revamp", "overhaul", "setup", "restructure", "reconfigure", "rebuild", "migrate", "complete")
 

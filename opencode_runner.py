@@ -32,7 +32,7 @@ class Runner:
         data_dir = brain.tenant_data(tid)
         self.xdg = os.path.join(data_dir, "xdg")
         os.makedirs(self.xdg, exist_ok=True)
-        self.cmd_base = ["opencode", "run", "-m", config.MODEL, "--log-level", "ERROR"]
+        self.cmd_base = ["opencode", "run", "-m", config.MODEL, "--log-level", "error"]
         if not _binary_ok():
             raise RuntimeError("opencode binary not found on PATH")
 
@@ -46,7 +46,10 @@ class Runner:
             "LC_ALL": "C.UTF-8",
             "PROXY_PORT": os.environ.get("PROXY_PORT", "8123"),
             "DISCORD_AUTH": os.environ.get("DISCORD_AUTH", ""),
+            "OLLAMA_API_KEY": config.OLLAMA_API_KEY,
         }
+        if config.ZEN_KEY:
+            env["OPENCODE_API_KEY"] = config.ZEN_KEY
         return env
 
     def _snapshot_sessions(self):

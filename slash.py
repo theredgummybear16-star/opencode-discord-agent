@@ -4,6 +4,10 @@ import urllib.request
 
 def payload_commands():
     return [
+        {"name": "ask", "description": "Ask the agent a question from anywhere",
+         "options": [{"name": "prompt", "description": "What to ask the agent", "type": 3, "required": True}]},
+        {"name": "opencode", "description": "Ask the agent a question from anywhere",
+         "options": [{"name": "prompt", "description": "What to ask the agent", "type": 3, "required": True}]},
         {"name": "help", "description": "List all owner commands"},
         {"name": "status", "description": "Bot status: uptime, tenants, crons, servers, model"},
         {"name": "cronjobs", "description": "List all background cron jobs"},

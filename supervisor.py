@@ -18,6 +18,17 @@ LOOP_S = 2
 class Supervisor:
     def __init__(self):
         self.state = brain.load_state()
+        # Invalidate stale per-process model overrides when the shipped default changes.
+        if self.state.get("_const_version") != config.CONST_VERSION:
+            self.state.pop("model_override", None)
+            self.state["_const_version"] = config.CONST_VERSION
+            try:
+                brain.save_state(self.state)
+            except Exception:
+                pass
+        override = self.state.get("model_override")
+        if override:
+            config.MODEL = override
         self.proxy = proxymod.Proxy(self.state, lambda e: brain.audit(self.state, e))
         self.boot = time.time()
         self.client = None

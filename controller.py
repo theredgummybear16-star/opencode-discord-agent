@@ -319,7 +319,9 @@ class Controller:
         return None, None
 
     async def handle_interaction(self, interaction):
-        if str(interaction.user.id) != config.OWNER_ID:
+        data = interaction.data or {}
+        name = (data.get("name") or "").lstrip("/")
+        if name not in ("ask", "opencode", "invite") and str(interaction.user.id) != config.OWNER_ID:
             try:
                 await interaction.response.send_message("Owner-only commands, sorry.", ephemeral=True)
             except Exception:
@@ -328,8 +330,6 @@ class Controller:
         if self._dup("i:%s" % interaction.id, window=600):
             brain.quiet_log("dup interaction %s dropped" % interaction.id)
             return
-        data = interaction.data or {}
-        name = (data.get("name") or "").lstrip("/")
         ephemeral = name not in ("ask", "opencode")
         try:
             await interaction.response.defer(ephemeral=ephemeral)
@@ -354,8 +354,8 @@ class Controller:
             if not prompt:
                 reply = "Usage: /ask <prompt>"
             else:
-                tid = self._owner_tid()
-                rec = brain.ensure_tenant(self.state, tid, "dm", "owner", user_id=config.OWNER_ID)
+                tid = "dm_%s" % uid
+                rec = brain.ensure_tenant(self.state, tid, "dm", str(getattr(interaction.user, "name", uid)), user_id=uid)
                 caps = {"is_owner_of_bot": True, "display": "owner", "is_guild_owner": False,
                         "guild_name": None, "guild_id": None}
                 req = {"content": prompt, "author_display": "owner (slash)"}

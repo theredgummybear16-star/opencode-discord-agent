@@ -3,12 +3,18 @@ import urllib.request
 
 
 def payload_commands():
+    base = {
+        "integration_types": [0, 1],
+        "contexts": [0, 1, 2],
+    }
     return [
         {"name": "ask", "description": "Ask the agent a question from anywhere",
-         "options": [{"name": "prompt", "description": "What to ask the agent", "type": 3, "required": True}]},
+         "options": [{"name": "prompt", "description": "What to ask the agent", "type": 3, "required": True}],
+         **base},
         {"name": "opencode", "description": "Ask the agent a question from anywhere",
-         "options": [{"name": "prompt", "description": "What to ask the agent", "type": 3, "required": True}]},
-        {"name": "help", "description": "List all owner commands"},
+         "options": [{"name": "prompt", "description": "What to ask the agent", "type": 3, "required": True}],
+         **base},
+        {"name": "help", "description": "List all owner commands", **base},
         {"name": "status", "description": "Bot status: uptime, tenants, crons, servers, model"},
         {"name": "cronjobs", "description": "List all background cron jobs"},
         {"name": "run", "description": "Run a workspace script now",
@@ -42,7 +48,11 @@ def payload_commands():
 
 
 def register_commands(app_id, token):
-    payload = json.dumps(payload_commands()).encode()
+    commands = payload_commands()
+    for _cmd in commands:
+        _cmd.setdefault("integration_types", [0, 1])
+        _cmd.setdefault("contexts", [0, 1, 2])
+    payload = json.dumps(commands).encode()
     url = "https://discord.com/api/v10/applications/%s/commands" % int(app_id)
     req = urllib.request.Request(
         url, data=payload,

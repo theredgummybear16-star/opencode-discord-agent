@@ -775,7 +775,10 @@ class Controller:
                     return await self._queue_approval(tid, rec, caps, origin, req, requester_id, message, target, result["approval"].strip())
                 return await self._finish(True, result["text"] or "Done.", tid, message, requester_id, rec)
             return await self._finish(True, result["text"] or "Done.", tid, message, requester_id, rec)
-        return await self._finish(False, "I failed to process that (model error or timeout). Try again.", tid, message, requester_id, rec)
+        detail = (result.get("text") or "").strip()
+        if detail:
+            detail = " Details: " + detail[:500]
+        return await self._finish(False, "I failed to process that (model error or timeout). Try again.%s" % detail, tid, message, requester_id, rec)
 
     async def _finish(self, ok, text, tid, message, requester_id, rec):
         mention_ids = None

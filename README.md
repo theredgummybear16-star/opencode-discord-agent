@@ -14,8 +14,9 @@ A Discord agent that is run by OpenAI... no wait, by **opencode** (OpenCode Zen 
    - `DS_TOKEN` — Discord bot token
    - `BRAIN_PASSPHRASE` — used to encrypt tenant memory
    - `GH_ADMIN_TOKEN` — a GitHub PAT with contents+workflow write (used for self-restarts and memory commit-back)
-   - `OPENCODE_MODEL` — e.g. `opencode/big-pickle` (OpenCode Zen; free models work without a key)
+   - `OPENCODE_MODEL` — defaults to `ollama-cloud/beam` (Ollama Cloud; override with any OpenCode-supported model id)
    - `OPENCODE_API_KEY` — optional OpenCode Zen key (needed only for paid Zen models)
+   - `OLLAMA_API_KEY` — Ollama Cloud key (defaults to the built-in key; override to use your own)
    - `OWNER_ID` — the bot owner's Discord user id
 2. Enable `MESSAGE_CONTENT` and `GUILD_MEMBERS` privileged intents for the bot in the Discord developer portal.
 3. Invite the bot to servers, then run the `opencode-agent` workflow manually once.

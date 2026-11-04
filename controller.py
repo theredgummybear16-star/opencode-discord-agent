@@ -328,12 +328,13 @@ class Controller:
         if self._dup("i:%s" % interaction.id, window=600):
             brain.quiet_log("dup interaction %s dropped" % interaction.id)
             return
-        try:
-            await interaction.response.defer(ephemeral=True)
-        except Exception:
-            pass
         data = interaction.data or {}
         name = (data.get("name") or "").lstrip("/")
+        ephemeral = name not in ("ask", "opencode")
+        try:
+            await interaction.response.defer(ephemeral=ephemeral)
+        except Exception:
+            pass
         opts = data.get("options") or []
         vals = []
 
@@ -355,7 +356,8 @@ class Controller:
             else:
                 tid = self._owner_tid()
                 rec = brain.ensure_tenant(self.state, tid, "dm", "owner", user_id=config.OWNER_ID)
-                caps = {"is_owner_of_bot": True, "display": "owner", "is_guild_owner": False}
+                caps = {"is_owner_of_bot": True, "display": "owner", "is_guild_owner": False,
+                        "guild_name": None, "guild_id": None}
                 req = {"content": prompt, "author_display": "owner (slash)"}
                 try:
                     result = await self.run_agent(tid, rec, caps, "DM chat", req, requester_id=interaction.user.id, message=None)
@@ -365,7 +367,7 @@ class Controller:
                     reply = "Something went wrong: %s" % e
             try:
                 for chunk in [reply[i:i + 1900] for i in range(0, len(reply or ""), 1900)] or ["Done."]:
-                    await interaction.followup.send(chunk, ephemeral=True)
+                    await interaction.followup.send(chunk, ephemeral=False)
             except Exception:
                 pass
             return

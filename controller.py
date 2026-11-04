@@ -776,8 +776,12 @@ class Controller:
                 return await self._finish(True, result["text"] or "Done.", tid, message, requester_id, rec)
             return await self._finish(True, result["text"] or "Done.", tid, message, requester_id, rec)
         detail = (result.get("text") or "").strip()
+        if not detail:
+            detail = (result.get("stderr") or "").strip()
+        if result.get("returncode") is not None:
+            detail = ("[rc=%s] %s" % (result.get("returncode"), detail)).strip()
         if detail:
-            detail = " Details: " + detail[:500]
+            detail = " Details: " + detail[:700]
         return await self._finish(False, "I failed to process that (model error or timeout). Try again.%s" % detail, tid, message, requester_id, rec)
 
     async def _finish(self, ok, text, tid, message, requester_id, rec):

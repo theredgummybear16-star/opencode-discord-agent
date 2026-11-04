@@ -138,8 +138,10 @@ class Runner:
         os.makedirs(config.LOGS_DIR, exist_ok=True)
         fd, tmppath = tempfile.mkstemp(prefix="oc_run_", dir=config.LOGS_DIR)
         os.close(fd)
+        p_err, errpath = tempfile.mkstemp(prefix="oc_err_", dir=config.LOGS_DIR)
+        os.close(p_err)
         with open(tmppath, "wb") as out:
-            with open(os.devnull, "wb") as err:
+            with open(errpath, "wb") as err:
                 proc = subprocess.Popen(
                     self._cmd(self.cmd_base, prompt, session_id),
                     cwd=brain.tenant_workspace(self.tid),
@@ -152,7 +154,20 @@ class Runner:
                 except subprocess.TimeoutExpired:
                     proc.kill()
                     proc.wait()
-                    return {"ok": False, "text": "", "sid": None, "approval": None, "timeout": True}
+                    raw_err = ""
+                    try:
+                        raw_err = open(errpath, "rb").read().decode("utf-8", "replace").strip()
+                    except Exception:
+                        pass
+                    try:
+                        os.remove(tmppath)
+                    except Exception:
+                        pass
+                    try:
+                        os.remove(errpath)
+                    except Exception:
+                        pass
+                    return {"ok": False, "text": ("Timed out after %ss. %s" % (timeout, raw_err)).strip(), "sid": None, "approval": None, "timeout": True}
         after = self._snapshot_sessions()
         new_ids = (after - before) if session_id is None else {session_id}
         sid = None
@@ -164,17 +179,27 @@ class Runner:
         with open(tmppath, "rb") as fh:
             raw = fh.read().decode("utf-8", "replace")
         try:
+            raw_err = open(errpath, "rb").read().decode("utf-8", "replace").strip()
+        except Exception:
+            raw_err = ""
+        try:
             os.remove(tmppath)
+        except Exception:
+            pass
+        try:
+            os.remove(errpath)
         except Exception:
             pass
         if text is None:
             text = raw.strip()
+        if not text and raw_err:
+            text = raw_err
         approval = None
         lowered = (text or "").upper()
         if "APPROVAL_REQUIRED:" in lowered:
             idx = text.find("APPROVAL_REQUIRED:")
             approval = text[idx + len("APPROVAL_REQUIRED:"):].strip()
-        return {"ok": proc.returncode == 0 and bool(text), "text": text, "sid": sid, "approval": approval, "timeout": False}
+        return {"ok": proc.returncode == 0 and bool(text), "text": text, "sid": sid, "approval": approval, "timeout": False, "stderr": raw_err, "returncode": proc.returncode}
 
 
 def _updated_for(env, sid):

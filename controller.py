@@ -506,6 +506,16 @@ class Controller:
         name = (arg or "").strip()
         if not name:
             return "Current model: `%s` (override: %s)" % (config.MODEL, self.state.get("model_override") or "none")
+        if name.lower() in ("default", "reset"):
+            old = config.MODEL
+            config.MODEL = config.MODEL_DEFAULT
+            self.state.pop("model_override", None)
+            self.runners = {}
+            try:
+                brain.save_state(self.state)
+            except Exception as e:
+                brain.quiet_log("model save err %s" % e)
+            return "Model reset: `%s` -> `%s` (fresh runners on next use)." % (old, config.MODEL)
         if re.fullmatch(r"[A-Za-z0-9._/:-]{2,120}", name) is None:
             return "invalid model id."
         old = config.MODEL
